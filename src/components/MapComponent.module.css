@@ -1,0 +1,299 @@
+.mapWrapper {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #101726;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  color: #ffffff;
+  user-select: none;
+}
+
+.mapContainer {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* ============================================================
+   APPLE MAPS 3D NAVIGATION UI OVERLAYS
+   ============================================================ */
+
+/* Top Horizontal Station Strip */
+.topStationBar {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 25;
+  display: flex;
+  gap: 8px;
+  background: rgba(16, 24, 39, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 8px 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  max-width: calc(100vw - 120px);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  pointer-events: auto;
+}
+
+.topStationBar::-webkit-scrollbar {
+  height: 4px;
+}
+
+.topStationBar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.stationPill {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.stationPill:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.stationPill.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.6);
+}
+
+/* Floating Navigation Controls (Right Edge) */
+.floatingControls {
+  position: absolute;
+  right: 20px;
+  bottom: 90px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.actionPillButton {
+  background: rgba(16, 24, 39, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s ease;
+}
+
+.actionPillButton:hover {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.actionPillButton.active {
+  background: #0284c7;
+  border-color: #38bdf8;
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
+}
+
+/* Bottom Apple CarPlay Navigation Capsule */
+.bottomNavCapsule {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: 12px 28px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  pointer-events: auto;
+}
+
+.capsuleItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.capsuleValue {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #38bdf8;
+}
+
+.capsuleLabel {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.capsuleDivider {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ============================================================
+   CUSTOM APPLE MAPS POI MARKERS & HIGHWAY SHIELD
+   ============================================================ */
+
+/* The Exact Apple Maps Marker: Circular Mint Badge + 2-Line Text Below */
+:global(.apple-poi-marker) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  pointer-events: auto;
+  transform: translate(-50%, -100%);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:global(.apple-poi-marker:hover) {
+  transform: translate(-50%, -100%) scale(1.15);
+  z-index: 50 !important;
+}
+
+:global(.apple-poi-badge) {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #a7f3d0;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), 0 0 12px rgba(167, 243, 208, 0.4);
+}
+
+:global(.apple-poi-badge.blue) {
+  background: #bae6fd;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), 0 0 12px rgba(186, 230, 253, 0.5);
+}
+
+:global(.apple-poi-badge.green) {
+  background: #bbf7d0;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), 0 0 12px rgba(187, 247, 208, 0.5);
+}
+
+:global(.apple-poi-badge.interchange) {
+  background: #fed7aa;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5), 0 0 14px rgba(254, 215, 170, 0.6);
+  width: 36px;
+  height: 36px;
+}
+
+:global(.apple-poi-badge svg) {
+  width: 18px;
+  height: 18px;
+  fill: #0f172a;
+}
+
+/* Two-line title label below the badge */
+:global(.apple-poi-label) {
+  margin-top: 5px;
+  text-align: center;
+  pointer-events: none;
+}
+
+:global(.apple-poi-title) {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 2px 8px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 0, 0, 0.9);
+}
+
+:global(.apple-poi-sub) {
+  font-size: 10px;
+  font-weight: 600;
+  color: #cbd5e1;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 0, 0, 0.8);
+}
+
+/* Highway / Corridor Shield on the track (Like the "5" shield in reference image) */
+:global(.corridor-shield) {
+  background: #ffffff;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 8px 8px 12px 12px;
+  border: 2px solid #0284c7;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+:global(.corridor-shield.green) {
+  color: #15803d;
+  border-color: #16a34a;
+}
+
+/* MapLibre popup refinement */
+:global(.maplibregl-popup-content) {
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  color: #f8fafc !important;
+  border-radius: 14px !important;
+  padding: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6) !important;
+}
+
+:global(.maplibregl-popup-tip) {
+  border-top-color: rgba(15, 23, 42, 0.95) !important;
+}
+
+@media (max-width: 800px) {
+  .topStationBar {
+    display: none;
+  }
+  .bottomNavCapsule {
+    bottom: 16px;
+    padding: 8px 18px;
+    gap: 14px;
+  }
+}
