@@ -240,8 +240,9 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
   private meterScale: number;
 
   // Active 3D Metro Train Fleet
-  private trainFleet: MetroTrainFleet | null = null;
+  public trainFleet: MetroTrainFleet | null = null;
   private lastFrameTime: number = 0;
+  private isPaused: boolean = false;
 
   // Lights
   private ambientLight = new THREE.AmbientLight();
@@ -300,6 +301,17 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     if (this.map) {
       this.map.triggerRepaint();
     }
+  }
+
+  public setPaused(paused: boolean) {
+    this.isPaused = paused;
+    if (this.map) {
+      this.map.triggerRepaint();
+    }
+  }
+
+  public getPaused(): boolean {
+    return this.isPaused;
   }
 
   private applyTheme(theme: 'light' | 'dark') {
@@ -397,11 +409,19 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     const greenElev = (i: number): number => {
       if (i < 3820) return 12.0;
       if (i <= 4015) {
+        // Ramp down into Thirumangalam portal entrance (12.0m -> 0.0m)
         const t = (i - 3820) / (4015 - 3820);
         const s = t * t * (3 - 2 * t);
         return 12.0 * (1 - s);
       }
-      return 0.0;
+      if (i <= 4165) {
+        // Smooth descent from portal entrance (0.0m) into subterranean tunnel (-12.0m)
+        const t = (i - 4015) / (4165 - 4015);
+        const s = t * t * (3 - 2 * t);
+        return -12.0 * s;
+      }
+      // Subterranean tunnel depth through Shenoy Nagar to Central
+      return -12.0;
     };
 
     // -------------------------------------------------------------
@@ -410,9 +430,9 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     // 1348 to 1948: ALANDUR MULTI-TIER SOAR (climbing up to 19.5m, 6m over Green Line!)
     // 1948 to 2720: Elevated north through Little Mount (12.5m)
     // 2720 to 2880: Smooth Descent Ramp into Saidapet Portal (12.5m -> 0m)
-    // 2880 to 8600: Underground Tunnel
-    // 8600 to 8760: Smooth Ascent Ramp out of New Washermanpet (0m -> 12.5m)
-    // 8760 to 10400: North Elevated Viaduct through Wimco Nagar (12.5m)
+    // 2880 to 8260: Subterranean Underground Tunnel (-12.0m)
+    // 8260 to 8420: Smooth Ascent Ramp out of New Washermanpet (0m -> 12.5m)
+    // 8420 to 10400: North Elevated Viaduct through Wimco Nagar (12.5m)
     // -------------------------------------------------------------
     const blueElev = (i: number): number => {
       if (i < 1348) return 12.5;
@@ -422,12 +442,26 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       }
       if (i < 2720) return 12.5;
       if (i <= 2880) {
+        // Saidapet descent ramp down to portal (12.5m -> 0.0m)
         const t = (i - 2720) / (2880 - 2720);
         const s = t * t * (3 - 2 * t);
         return 12.5 * (1 - s);
       }
-      if (i < 8260) return 0.0;
+      if (i <= 3030) {
+        // Smooth descent from Saidapet portal (0.0m) into deep subterranean tunnel (-12.0m)
+        const t = (i - 2880) / (3030 - 2880);
+        const s = t * t * (3 - 2 * t);
+        return -12.0 * s;
+      }
+      if (i < 8110) return -12.0;
+      if (i <= 8260) {
+        // Smooth ascent from deep tunnel (-12.0m) up to New Washermanpet portal (0.0m)
+        const t = (i - 8110) / (8260 - 8110);
+        const s = t * t * (3 - 2 * t);
+        return -12.0 * (1 - s);
+      }
       if (i <= 8420) {
+        // Ascent ramp from portal (0.0m) onto northern elevated viaduct (12.5m)
         const t = (i - 8260) / (8420 - 8260);
         const s = t * t * (3 - 2 * t);
         return 12.5 * s;
@@ -534,6 +568,68 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     const blueStripeN = createRibbonGeometry(blueNorthSpan, -0.22, 0.22, 1.23, 1.23);
     const mergedBlueStripe = mergeGeometries([blueStripeS, blueStripeN]);
     this.addMesh(mergedBlueStripe, this.blueStripeMaterial);
+
+    // =========================================================================
+    // 5B. SUBTERRANEAN TUNNEL TRACK OVERLAYS (Translucent Rails & Glowing Lines)
+    // =========================================================================
+    const subGreenSpan = greenPts.slice(4015);
+    const subBlueSpan = bluePts.slice(2880, 8261);
+
+    const subRailGeoms: THREE.BufferGeometry[] = [];
+    [subGreenSpan, subBlueSpan].forEach((span) => {
+      if (span.length < 2) return;
+      const r1 = createRibbonGeometry(span, -2.42, -2.28, 1.42, 1.42);
+      const r2 = createRibbonGeometry(span, -1.02, -0.88, 1.42, 1.42);
+      const r3 = createRibbonGeometry(span, 0.88, 1.02, 1.42, 1.42);
+      const r4 = createRibbonGeometry(span, 2.28, 2.42, 1.42, 1.42);
+      if (r1) subRailGeoms.push(r1);
+      if (r2) subRailGeoms.push(r2);
+      if (r3) subRailGeoms.push(r3);
+      if (r4) subRailGeoms.push(r4);
+    });
+    const mergedSubRails = mergeGeometries(subRailGeoms);
+    if (mergedSubRails) {
+      const subRailMat = new THREE.MeshStandardMaterial({
+        color: 0x64748b,
+        metalness: 0.8,
+        roughness: 0.3,
+        transparent: true,
+        opacity: 0.35,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const subRailMesh = new THREE.Mesh(mergedSubRails, subRailMat);
+      subRailMesh.renderOrder = 997;
+      this.scene.add(subRailMesh);
+    }
+
+    const subGreenStripe = createRibbonGeometry(subGreenSpan, -0.22, 0.22, 1.25, 1.25);
+    if (subGreenStripe) {
+      const subGreenMat = new THREE.MeshBasicMaterial({
+        color: 0x10b981,
+        transparent: true,
+        opacity: 0.35,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const subGreenMesh = new THREE.Mesh(subGreenStripe, subGreenMat);
+      subGreenMesh.renderOrder = 997;
+      this.scene.add(subGreenMesh);
+    }
+
+    const subBlueStripe = createRibbonGeometry(subBlueSpan, -0.22, 0.22, 1.25, 1.25);
+    if (subBlueStripe) {
+      const subBlueMat = new THREE.MeshBasicMaterial({
+        color: 0x3b82f6,
+        transparent: true,
+        opacity: 0.35,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const subBlueMesh = new THREE.Mesh(subBlueStripe, subBlueMat);
+      subBlueMesh.renderOrder = 997;
+      this.scene.add(subBlueMesh);
+    }
 
     // =========================================================================
     // 6. SUPPORT PIERS & CANTILEVER HAMMERHEAD CAPS (Every ~27m)
@@ -1091,13 +1187,16 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     // Real-time kinematic train physics update
     const now = performance.now();
     if (this.lastFrameTime > 0) {
-      const delta = (now - this.lastFrameTime) / 1000;
-      this.trainFleet?.update(delta);
+      const delta = this.isPaused ? 0 : (now - this.lastFrameTime) / 1000;
+      if (delta > 0) {
+        this.trainFleet?.update(delta);
+      }
     }
     this.lastFrameTime = now;
 
     this.camera.projectionMatrix = m.multiply(l);
     this.renderer.resetState();
+    gl.clear(gl.DEPTH_BUFFER_BIT);
     this.renderer.render(this.scene, this.camera);
     this.map.triggerRepaint();
   }

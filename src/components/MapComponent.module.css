@@ -123,6 +123,17 @@
   box-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
 }
 
+.actionPillButton.paused {
+  background: rgba(220, 38, 38, 0.85);
+  border-color: #f87171;
+  box-shadow: 0 0 16px rgba(239, 68, 68, 0.45);
+}
+
+.actionPillButton.paused:hover {
+  background: rgba(239, 68, 68, 0.95);
+  border-color: #fca5a5;
+}
+
 /* Bottom Apple CarPlay Navigation Capsule */
 .bottomNavCapsule {
   position: absolute;

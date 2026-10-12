@@ -33,6 +33,8 @@ export default function MapComponent() {
   const [showBuildings, setShowBuildings] = useState<boolean>(true);
   const [mapTheme, setMapTheme] = useState<'light' | 'dark'>('dark');
   const themeRef = useRef<'light' | 'dark'>('dark');
+  const [isTrainPaused, setIsTrainPaused] = useState<boolean>(false);
+  const isTrainPausedRef = useRef<boolean>(false);
 
   // Telemetry state
   const [telemetry, setTelemetry] = useState({
@@ -125,7 +127,9 @@ export default function MapComponent() {
       map.removeLayer('three-metro-bridges');
     }
     const bridgeLayer = new ThreeMetroBridgeLayer(currentTheme);
+    bridgeLayer.setPaused(isTrainPausedRef.current);
     threeLayerRef.current = bridgeLayer;
+    (window as unknown as { __threeLayer: unknown }).__threeLayer = bridgeLayer;
     map.addLayer(bridgeLayer);
   }, []);
 
@@ -380,6 +384,16 @@ export default function MapComponent() {
     }
   }, [isFollowingTrain, isOrbiting]);
 
+  // Toggle Pause/Resume Metro Train Movements
+  const togglePauseTrains = useCallback(() => {
+    setIsTrainPaused((prev) => {
+      const next = !prev;
+      isTrainPausedRef.current = next;
+      threeLayerRef.current?.setPaused(next);
+      return next;
+    });
+  }, []);
+
   // Toggle 3D Buildings Visibility
   const toggleBuildings = () => {
     const nextState = !showBuildings;
@@ -508,6 +522,13 @@ export default function MapComponent() {
           {isFollowingTrain ? '⏹️ Stop Following' : '🚆 Follow Metro Train'}
         </button>
         <button
+          className={`${styles.actionPillButton} ${isTrainPaused ? styles.paused : ''}`}
+          onClick={togglePauseTrains}
+          title={isTrainPaused ? 'Resume metro train movements' : 'Pause metro train movements'}
+        >
+          {isTrainPaused ? '▶️ Resume Trains' : '⏸️ Pause Trains'}
+        </button>
+        <button
           className={`${styles.actionPillButton} ${isOrbiting ? styles.active : ''}`}
           onClick={toggleOrbit}
         >
@@ -524,8 +545,8 @@ export default function MapComponent() {
       {/* Bottom Telemetry Navigation Capsule */}
       <footer className={styles.bottomNavCapsule}>
         <div className={styles.capsuleItem}>
-          <div className={styles.capsuleValue}>{telemetry.speed}</div>
-          <div className={styles.capsuleLabel}>KM/H</div>
+          <div className={styles.capsuleValue}>{isTrainPaused ? 0 : telemetry.speed}</div>
+          <div className={styles.capsuleLabel}>{isTrainPaused ? 'PAUSED' : 'KM/H'}</div>
         </div>
         <div className={styles.capsuleDivider} />
         <div className={styles.capsuleItem}>
