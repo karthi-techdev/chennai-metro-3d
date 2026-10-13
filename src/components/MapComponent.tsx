@@ -257,13 +257,19 @@ export default function MapComponent() {
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.FullscreenControl(), 'top-right');
 
+    let moveThrottle: number | null = null;
     map.on('move', () => {
-      setTelemetry((prev) => ({
-        ...prev,
-        pitch: Math.round(map.getPitch()),
-        bearing: Math.round(map.getBearing()),
-        zoom: Number(map.getZoom().toFixed(1)),
-      }));
+      if (moveThrottle !== null) return;
+      moveThrottle = requestAnimationFrame(() => {
+        moveThrottle = null;
+        const p = Math.round(map.getPitch());
+        const b = Math.round(map.getBearing());
+        const z = Number(map.getZoom().toFixed(1));
+        setTelemetry((prev) => {
+          if (prev.pitch === p && prev.bearing === b && prev.zoom === z) return prev;
+          return { ...prev, pitch: p, bearing: b, zoom: z };
+        });
+      });
     });
 
     map.on('load', () => {
@@ -416,27 +422,42 @@ export default function MapComponent() {
     });
   }, []);
 
-  // Periodic poll of real-time clock, service status, and train telemetry
+  // Periodic poll of real-time clock, service status, and train telemetry (optimized to prevent redundant re-renders)
   useEffect(() => {
+    let lastSec = -1;
+    let lastRosterSignature = '';
+
     const timer = setInterval(() => {
       const layer = threeLayerRef.current;
       if (!layer?.trainFleet) return;
       const t = layer.trainFleet.getSimTime();
-      setSimTimeSec(t);
-      setServiceStatus(getCMRLServiceStatusForDay(selectedDay, t));
+      const currentIntSec = Math.floor(t);
+
+      // Only re-render clock and service badge when the integer second advances
+      if (currentIntSec !== lastSec) {
+        lastSec = currentIntSec;
+        setSimTimeSec(t);
+        setServiceStatus(getCMRLServiceStatusForDay(selectedDay, t));
+      }
+
       const tel = layer.trainFleet.getPrimaryTrainTelemetry(selectedTrainIndex);
       setTrainTelemetry(tel);
-      // Live trip roster for the selector strip
+
+      // Live trip roster for the selector strip - only update state if roster actually changes
       const telemetries = layer.trainFleet
         .getFleetTelemetry()
         .filter((x): x is ActiveTrainTelemetry => x !== null);
-      setActiveTripIds(telemetries.map((x) => x.tripId));
-      setTripLineColors(telemetries.map((x) => x.line));
-      setActiveTrainCount(telemetries.length);
-      if (selectedTrainIndex >= telemetries.length && telemetries.length > 0) {
-        setSelectedTrainIndex(0);
+      const rosterSig = telemetries.map((x) => x.tripId).join(',');
+      if (rosterSig !== lastRosterSignature) {
+        lastRosterSignature = rosterSig;
+        setActiveTripIds(telemetries.map((x) => x.tripId));
+        setTripLineColors(telemetries.map((x) => x.line));
+        setActiveTrainCount(telemetries.length);
+        if (selectedTrainIndex >= telemetries.length && telemetries.length > 0) {
+          setSelectedTrainIndex(0);
+        }
       }
-    }, 150);
+    }, 200);
     return () => clearInterval(timer);
   }, [selectedTrainIndex, selectedDay]);
 
@@ -611,9 +632,9 @@ export default function MapComponent() {
               duration: 2000,
             });
           }}
-          title="Top view of Blue Line splitting into 4 ways and rejoining at Alandur"
+          title="Top view of multi-level Alandur interchange (Green Line soaring over Blue Line)"
         >
-          🛰️ Alandur 4-Way Split (Top View)
+          🛰️ Alandur Interchange (Top View)
         </button>
         <button
           className={styles.actionPillButton}

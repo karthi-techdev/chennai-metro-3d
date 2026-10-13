@@ -14,7 +14,7 @@ const MapComponent = dynamic(() => import('@/components/MapComponent'), {
         width: '100vw',
         backgroundColor: '#0b0f19',
         color: '#f8fafc',
-        fontFamily: 'sans-serif',
+        fontFamily: "'Host Grotesk', -apple-system, sans-serif",
         flexDirection: 'column',
         gap: '12px',
       }}

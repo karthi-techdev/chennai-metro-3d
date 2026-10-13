@@ -271,6 +271,11 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
   private stationTrussMaterial = new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide });
   private stationInteriorGlowMaterial = new THREE.MeshStandardMaterial({ roughness: 0.3, metalness: 0.1, side: THREE.DoubleSide });
 
+  // Zero-heap preallocated matrix pool for 60+ FPS render performance
+  private projMat = new THREE.Matrix4();
+  private localMat = new THREE.Matrix4();
+  private scaleVec = new THREE.Vector3();
+
   constructor(initialTheme: 'light' | 'dark' = 'dark') {
     this.theme = initialTheme;
     this.originMerc = maplibregl.MercatorCoordinate.fromLngLat(MODEL_ORIGIN, 0);
@@ -284,6 +289,8 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
   private addMesh(geom: THREE.BufferGeometry, material: THREE.Material): THREE.Mesh {
     const mesh = new THREE.Mesh(geom, material);
     mesh.frustumCulled = false;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
     this.scene.add(mesh);
     return mesh;
   }
@@ -476,100 +483,8 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     // Blue North: 8260 to 10400 (Tondiarpet ascent ramp, New Washermanpet, Tollgate, Thiruvottriyur, Wimco Nagar)
     const blueNorthSpan = bluePts.slice(8260, 10401);
 
-    // -------------------------------------------------------------------------
-    // ALANDUR 4-WAY BIFURCATION & REJOIN (BLUE LINE LEVEL 1: 12.5m)
-    // Fanning out south (1380 to 1500), 4 parallel tracks through Alandur station
-    // (1500 to 1760), and converging back into 2 tracks north (1760 to 1880)
-    // -------------------------------------------------------------------------
-    const alandurOuterWestPts: SamplePoint[] = [];
-    const alandurOuterEastPts: SamplePoint[] = [];
-
-    for (let i = 1380; i <= 1880; i++) {
-      const p = blueSouthSpan[i];
-      if (!p) continue;
-
-      let fOut = 0;
-      if (i < 1500) {
-        const t = (i - 1380) / 120;
-        fOut = t * t * (3 - 2 * t);
-      } else if (i <= 1760) {
-        fOut = 1.0;
-      } else {
-        const t = (i - 1760) / 120;
-        fOut = 1.0 - t * t * (3 - 2 * t);
-      }
-
-      const flare = 5.2 * fOut; // Spreads outer tracks to +/- 6.85m
-      const offW = -(1.65 + flare);
-      const offE = +(1.65 + flare);
-
-      alandurOuterWestPts.push({
-        x: p.x + p.nx * offW,
-        y: p.y + p.ny * offW,
-        z: p.z,
-        nx: p.nx,
-        ny: p.ny,
-        tx: p.tx,
-        ty: p.ty,
-      });
-
-      alandurOuterEastPts.push({
-        x: p.x + p.nx * offE,
-        y: p.y + p.ny * offE,
-        z: p.z,
-        nx: p.nx,
-        ny: p.ny,
-        tx: p.tx,
-        ty: p.ty,
-      });
-    }
-
-    // Kathipara curved interchange loop connecting Green Line (near Kathipara curve) to Outer West Alandur
-    const alandurChordRampPts: SamplePoint[] = [];
-    const chordStart = greenPts[235];
-    const chordEnd = alandurOuterWestPts[80];
-    if (chordStart && chordEnd) {
-      const numChordPts = 45;
-      for (let k = 0; k <= numChordPts; k++) {
-        const t = k / numChordPts;
-        const h00 = (1 + 2 * t) * (1 - t) * (1 - t);
-        const h10 = t * (1 - t) * (1 - t);
-        const h01 = t * t * (3 - 2 * t);
-        const h11 = t * t * (t - 1);
-
-        const chordLen = 220;
-        const cx = h00 * chordStart.x + h10 * (chordStart.tx * chordLen) + h01 * chordEnd.x + h11 * (chordEnd.tx * chordLen);
-        const cy = h00 * chordStart.y + h10 * (chordStart.ty * chordLen) + h01 * chordEnd.y + h11 * (chordEnd.ty * chordLen);
-        const cz = 12.5;
-
-        const dt = 0.01;
-        const tNext = Math.min(1, t + dt);
-        const nh00 = (1 + 2 * tNext) * (1 - tNext) * (1 - tNext);
-        const nh10 = tNext * (1 - tNext) * (1 - tNext);
-        const nh01 = tNext * tNext * (3 - 2 * tNext);
-        const nh11 = tNext * tNext * (tNext - 1);
-        const ncx = nh00 * chordStart.x + nh10 * (chordStart.tx * chordLen) + nh01 * chordEnd.x + nh11 * (chordEnd.tx * chordLen);
-        const ncy = nh00 * chordStart.y + nh10 * (chordStart.ty * chordLen) + nh01 * chordEnd.y + nh11 * (chordEnd.ty * chordLen);
-        const ctx = ncx - cx;
-        const cty = ncy - cy;
-        const cLen = Math.hypot(ctx, cty) || 1;
-        const unitTx = ctx / cLen;
-        const unitTy = cty / cLen;
-
-        alandurChordRampPts.push({
-          x: cx,
-          y: cy,
-          z: cz,
-          nx: -unitTy,
-          ny: unitTx,
-          tx: unitTx,
-          ty: unitTy,
-        });
-      }
-    }
-
     const allSpans = [greenSpan, blueSouthSpan, blueNorthSpan];
-    const branchSpans = [alandurOuterWestPts, alandurOuterEastPts, alandurChordRampPts];
+
 
     // =========================================================================
     // 1. SLATE-BLUE RUNNING DECK (Continuous road/deck surface)
@@ -579,11 +494,7 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       const g = createRibbonGeometry(span, -4.0, 4.0, 1.2, 1.2);
       if (g) deckGeoms.push(g);
     });
-    // 4-Way bifurcation outer decks (Outer West, Outer East, Kathipara chord)
-    branchSpans.forEach((span) => {
-      const g = createRibbonGeometry(span, -1.8, 1.8, 1.2, 1.2);
-      if (g) deckGeoms.push(g);
-    });
+
     const mergedDeck = mergeGeometries(deckGeoms);
     this.addMesh(mergedDeck, this.deckMaterial);
 
@@ -599,14 +510,7 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       if (gLeft) girderGeoms.push(gLeft);
       if (gRight) girderGeoms.push(gRight);
     });
-    branchSpans.forEach((span) => {
-      const gBottom = createRibbonGeometry(span, -1.2, 1.2, 0.0, 0.0);
-      const gLeft = createRibbonGeometry(span, -1.8, -1.2, 1.2, 0.0);
-      const gRight = createRibbonGeometry(span, 1.2, 1.8, 0.0, 1.2);
-      if (gBottom) girderGeoms.push(gBottom);
-      if (gLeft) girderGeoms.push(gLeft);
-      if (gRight) girderGeoms.push(gRight);
-    });
+
     const mergedGirder = mergeGeometries(girderGeoms);
     this.addMesh(mergedGirder, this.boxGirderMaterial);
 
@@ -630,25 +534,7 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       if (prTop) parapetGeoms.push(prTop);
       if (prOuter) parapetGeoms.push(prOuter);
     });
-    // Outer edge parapets on the bifurcated branches
-    branchSpans.forEach((span, idx) => {
-      const isLeft = idx === 0 || idx === 2;
-      if (isLeft) {
-        const plOuter = createRibbonGeometry(span, -2.0, -2.0, 1.2, 2.4);
-        const plTop = createRibbonGeometry(span, -2.0, -1.6, 2.4, 2.4);
-        const plInner = createRibbonGeometry(span, -1.6, -1.6, 2.4, 1.2);
-        if (plOuter) parapetGeoms.push(plOuter);
-        if (plTop) parapetGeoms.push(plTop);
-        if (plInner) parapetGeoms.push(plInner);
-      } else {
-        const prInner = createRibbonGeometry(span, 1.6, 1.6, 1.2, 2.4);
-        const prTop = createRibbonGeometry(span, 1.6, 2.0, 2.4, 2.4);
-        const prOuter = createRibbonGeometry(span, 2.0, 2.0, 2.4, 1.2);
-        if (prInner) parapetGeoms.push(prInner);
-        if (prTop) parapetGeoms.push(prTop);
-        if (prOuter) parapetGeoms.push(prOuter);
-      }
-    });
+
     const mergedParapets = mergeGeometries(parapetGeoms);
     this.addMesh(mergedParapets, this.parapetMaterial);
 
@@ -667,13 +553,7 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       if (r3) railGeoms.push(r3);
       if (r4) railGeoms.push(r4);
     });
-    // Standard gauge rails along the bifurcated tracks (Track 4 Outer West, Track 1 Outer East, Chord)
-    branchSpans.forEach((span) => {
-      const r1 = createRibbonGeometry(span, -0.72, -0.58, 1.42, 1.42);
-      const r2 = createRibbonGeometry(span, 0.58, 0.72, 1.42, 1.42);
-      if (r1) railGeoms.push(r1);
-      if (r2) railGeoms.push(r2);
-    });
+
     const mergedRails = mergeGeometries(railGeoms);
     this.addMesh(mergedRails, this.railMaterial);
 
@@ -721,6 +601,8 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       });
       const subRailMesh = new THREE.Mesh(mergedSubRails, subRailMat);
       subRailMesh.renderOrder = 997;
+      subRailMesh.matrixAutoUpdate = false;
+      subRailMesh.updateMatrix();
       this.scene.add(subRailMesh);
     }
 
@@ -735,6 +617,8 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       });
       const subGreenMesh = new THREE.Mesh(subGreenStripe, subGreenMat);
       subGreenMesh.renderOrder = 997;
+      subGreenMesh.matrixAutoUpdate = false;
+      subGreenMesh.updateMatrix();
       this.scene.add(subGreenMesh);
     }
 
@@ -749,6 +633,8 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
       });
       const subBlueMesh = new THREE.Mesh(subBlueStripe, subBlueMat);
       subBlueMesh.renderOrder = 997;
+      subBlueMesh.matrixAutoUpdate = false;
+      subBlueMesh.updateMatrix();
       this.scene.add(subBlueMesh);
     }
 
@@ -873,10 +759,7 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     generatePillarsForSpan(bluePts.slice(0, 2720));
     // Blue North piers (from ramp top at 8420 through Wimco Nagar)
     generatePillarsForSpan(bluePts.slice(8420, 10400));
-    // Pillars under 4-way bifurcated branches & Kathipara chord loop
-    generatePillarsForSpan(alandurOuterWestPts, 12, 3.5);
-    generatePillarsForSpan(alandurOuterEastPts, 12, 3.5);
-    generatePillarsForSpan(alandurChordRampPts, 10, 3.5);
+
 
     if (pierGeoms.length > 0) {
       const mergedPiers = mergeGeometries(pierGeoms);
@@ -999,50 +882,59 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
 
       if (isAlandurLower) {
         // -------------------------------------------------------------
-        // ALANDUR LEVEL 1 (LOWER 4-TRACK PLATFORM HALL: BLUE LINE 12.5m)
+        // ALANDUR LEVEL 1 (LOWER LEVEL: BLUE LINE 12.5m DUAL TRACK)
         // -------------------------------------------------------------
-        // Outer Left Platform (flanking Track 4)
-        const lpGeom = new THREE.BoxGeometry(halfL * 2 - 4, 3.8, 1.15);
-        lpGeom.translate(0, -9.8, 1.725);
+        // Left Platform Slab (flanking track at -1.65m)
+        const lpGeom = new THREE.BoxGeometry(halfL * 2 - 4, 4.4, 1.15);
+        lpGeom.translate(0, -6.6, 1.725);
         stationPlatformGeoms.push(placeGeom(lpGeom));
 
-        // Outer Right Platform (flanking Track 1)
-        const rpGeom = new THREE.BoxGeometry(halfL * 2 - 4, 3.8, 1.15);
-        rpGeom.translate(0, 9.8, 1.725);
+        // Right Platform Slab (flanking track at +1.65m)
+        const rpGeom = new THREE.BoxGeometry(halfL * 2 - 4, 4.4, 1.15);
+        rpGeom.translate(0, 6.6, 1.725);
         stationPlatformGeoms.push(placeGeom(rpGeom));
 
-        // Central Island Platform (between Tracks 2 & 3)
-        const centerPlat = new THREE.BoxGeometry(halfL * 2 - 4, 2.4, 1.15);
-        centerPlat.translate(0, 0, 1.725);
-        stationPlatformGeoms.push(placeGeom(centerPlat));
+        // Tactile Verge Coping along platform track edges
+        const lCoping = new THREE.BoxGeometry(halfL * 2 - 4, 0.3, 0.08);
+        lCoping.translate(0, -4.45, 2.34);
+        stationPlatformGeoms.push(placeGeom(lCoping));
+
+        const rCoping = new THREE.BoxGeometry(halfL * 2 - 4, 0.3, 0.08);
+        rCoping.translate(0, 4.45, 2.34);
+        stationPlatformGeoms.push(placeGeom(rCoping));
 
         // PSD balustrades along platform faces
-        const psdOffsets = [-7.8, -1.3, 1.3, 7.8];
-        psdOffsets.forEach((yOff) => {
-          const psdGlass = new THREE.BoxGeometry(halfL * 2 - 6, 0.08, 1.55);
-          psdGlass.translate(0, yOff, 3.1);
-          stationGlassGeoms.push(placeGeom(psdGlass));
+        const lPsdGlass = new THREE.BoxGeometry(halfL * 2 - 6, 0.08, 1.55);
+        lPsdGlass.translate(0, -4.4, 3.1);
+        stationGlassGeoms.push(placeGeom(lPsdGlass));
 
-          const psdRail = new THREE.BoxGeometry(halfL * 2 - 6, 0.14, 0.12);
-          psdRail.translate(0, yOff, 3.9);
-          stationTrussGeoms.push(placeGeom(psdRail));
-        });
+        const rPsdGlass = new THREE.BoxGeometry(halfL * 2 - 6, 0.08, 1.55);
+        rPsdGlass.translate(0, 4.4, 3.1);
+        stationGlassGeoms.push(placeGeom(rPsdGlass));
 
-        // 4-Track Entry & Exit Portals (spanning 24m)
+        const lPsdRail = new THREE.BoxGeometry(halfL * 2 - 6, 0.14, 0.12);
+        lPsdRail.translate(0, -4.4, 3.9);
+        stationTrussGeoms.push(placeGeom(lPsdRail));
+
+        const rPsdRail = new THREE.BoxGeometry(halfL * 2 - 6, 0.14, 0.12);
+        rPsdRail.translate(0, 4.4, 3.9);
+        stationTrussGeoms.push(placeGeom(rPsdRail));
+
+        // Standard 18m Width Portals
         [-halfL, halfL].forEach((xPos) => {
-          const lp = new THREE.BoxGeometry(2.4, 4.0, 5.6);
-          lp.translate(xPos, -11.8, 3.9);
+          const lp = new THREE.BoxGeometry(2.4, 4.6, 5.6);
+          lp.translate(xPos, -6.7, 3.9);
           stationTrussGeoms.push(placeGeom(lp));
 
-          const rp = new THREE.BoxGeometry(2.4, 4.0, 5.6);
-          rp.translate(xPos, 11.8, 3.9);
+          const rp = new THREE.BoxGeometry(2.4, 4.6, 5.6);
+          rp.translate(xPos, 6.7, 3.9);
           stationTrussGeoms.push(placeGeom(rp));
 
-          const lintel = new THREE.BoxGeometry(2.4, 27.6, 1.4);
+          const lintel = new THREE.BoxGeometry(2.4, 18.0, 1.4);
           lintel.translate(xPos, 0, 6.1);
           stationTrussGeoms.push(placeGeom(lintel));
 
-          const fascia = new THREE.BoxGeometry(0.5, 27.2, 0.9);
+          const fascia = new THREE.BoxGeometry(0.5, 17.6, 0.9);
           fascia.translate(xPos + (xPos < 0 ? -1.3 : 1.3), 0, 6.3);
           stationBlueAccentGeoms.push(placeGeom(fascia));
         });
@@ -1376,10 +1268,11 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     const py = this.originMerc.y * worldSize;
     const pixelsPerMeter = this.meterScale * worldSize;
 
-    const m = new THREE.Matrix4().fromArray(projMatArray);
-    const l = new THREE.Matrix4()
-      .makeTranslation(px, py, 0)
-      .scale(new THREE.Vector3(pixelsPerMeter, pixelsPerMeter, 1));
+    // Use zero-heap preallocated matrix pool
+    this.projMat.fromArray(projMatArray);
+    this.scaleVec.set(pixelsPerMeter, pixelsPerMeter, 1);
+    this.localMat.makeTranslation(px, py, 0).scale(this.scaleVec);
+    this.camera.projectionMatrix.multiplyMatrices(this.projMat, this.localMat);
 
     // Real-time kinematic train physics update
     const now = performance.now();
@@ -1391,11 +1284,12 @@ export class ThreeMetroBridgeLayer implements maplibregl.CustomLayerInterface {
     }
     this.lastFrameTime = now;
 
-    this.camera.projectionMatrix = m.multiply(l);
     this.renderer.resetState();
     gl.clear(gl.DEPTH_BUFFER_BIT);
     this.renderer.render(this.scene, this.camera);
-    this.map.triggerRepaint();
+    if (!this.isPaused) {
+      this.map.triggerRepaint();
+    }
   }
 
   public setPaused(paused: boolean) {
