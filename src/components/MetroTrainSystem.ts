@@ -1,5 +1,18 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {
+  ActiveTrainTelemetry,
+  TravelDirection,
+  MetroLineId,
+  DayOfWeek,
+  getMasterScheduleForToday,
+  getMasterScheduleForDay,
+  MasterSchedule,
+  ScheduledTrip,
+  evaluateTripStateAtTime,
+  getCurrentISTSeconds,
+  getSystemDayOfWeek,
+} from '../data/metroScheduleEngine';
 
 export interface TrackPoint {
   x: number;
@@ -40,13 +53,16 @@ export class TrackPath {
   }
 
   /**
-   * Sample position and orientation along the track at distance `distMeters` with lateral `transverseOffset`.
-   * Lateral offset: -1.65m for Up Track, +1.65m for Down Track.
+   * Sample position and orientation along the track into preallocated vectors.
+   * Zero heap allocations for ultra-smooth 60+ FPS animation.
    */
-  public getPointAtDistance(
+  public getPointAtDistanceInPlace(
     distMeters: number,
-    transverseOffset: number
-  ): { pos: THREE.Vector3; tangent: THREE.Vector3; normal: THREE.Vector3; elev: number } {
+    transverseOffset: number,
+    outPos: THREE.Vector3,
+    outTangent?: THREE.Vector3,
+    outNormal?: THREE.Vector3
+  ): number {
     let d = distMeters;
     // Cyclic wrapping for continuous infinite running
     d = ((d % this.totalLength) + this.totalLength) % this.totalLength;
@@ -91,12 +107,25 @@ export class TrackPath {
     const worldY = y + transverseOffset * ny;
     const worldZ = z + 1.42;
 
-    return {
-      pos: new THREE.Vector3(worldX, worldY, worldZ),
-      tangent: new THREE.Vector3(unitTx, unitTy, 0),
-      normal: new THREE.Vector3(nx, ny, 0),
-      elev: z,
-    };
+    outPos.set(worldX, worldY, worldZ);
+    if (outTangent) outTangent.set(unitTx, unitTy, 0);
+    if (outNormal) outNormal.set(nx, ny, 0);
+    return z;
+  }
+
+  /**
+   * Sample position and orientation along the track at distance `distMeters` with lateral `transverseOffset`.
+   * Lateral offset: -1.65m for Up Track, +1.65m for Down Track.
+   */
+  public getPointAtDistance(
+    distMeters: number,
+    transverseOffset: number
+  ): { pos: THREE.Vector3; tangent: THREE.Vector3; normal: THREE.Vector3; elev: number } {
+    const pos = new THREE.Vector3();
+    const tangent = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const elev = this.getPointAtDistanceInPlace(distMeters, transverseOffset, pos, tangent, normal);
+    return { pos, tangent, normal, elev };
   }
 }
 
@@ -157,22 +186,24 @@ function createDestinationBoardTexture(text: string): THREE.CanvasTexture {
       }
     }
 
-    // Bright Amber circular indicator bullet on the left (matching reference: ● LIGHT HOUSE)
+    // Bright Amber circular indicator bullet on the left
     ctx.beginPath();
-    ctx.arc(105, 128, 22, 0, Math.PI * 2);
+    ctx.arc(88, 128, 20, 0, Math.PI * 2);
     ctx.fillStyle = '#f59e0b';
     ctx.shadowColor = '#d97706';
     ctx.shadowBlur = 18;
     ctx.fill();
 
     // Glowing Amber Destination Text (unmirrored transit LED display)
-    ctx.font = 'bold 84px "Trebuchet MS", "Arial Black", -apple-system, sans-serif';
+    const upperText = text.toUpperCase().trim();
+    const fontSize = upperText.length > 15 ? 62 : (upperText.length > 11 ? 72 : 82);
+    ctx.font = `bold ${fontSize}px "Trebuchet MS", "Arial Black", -apple-system, sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fbbf24';
     ctx.shadowColor = '#f59e0b';
     ctx.shadowBlur = 16;
-    ctx.fillText(text.toUpperCase(), 155, 128);
+    ctx.fillText(upperText, 132, 128);
   }
   const tex = new THREE.CanvasTexture(canvas);
   tex.anisotropy = 8;
@@ -372,13 +403,24 @@ export class MetroCarBuilder {
   public static destTextureLighthouse: THREE.CanvasTexture | null = null;
   public static destTextureCentral: THREE.CanvasTexture | null = null;
   public static cmrlLogoTexture: THREE.CanvasTexture | null = null;
+  private static destTextureCache: Map<string, THREE.CanvasTexture> = new Map();
+
+  public static getDestinationTexture(text: string): THREE.CanvasTexture {
+    const key = text.toUpperCase().trim();
+    let tex = this.destTextureCache.get(key);
+    if (!tex) {
+      tex = createDestinationBoardTexture(key);
+      this.destTextureCache.set(key, tex);
+    }
+    return tex;
+  }
 
   public static initModelLoader() {
     if (this.isModelLoaded || this.loadCallbacks.length > 0) return;
 
     if (typeof document !== 'undefined') {
-      this.destTextureLighthouse = createDestinationBoardTexture('LIGHT HOUSE');
-      this.destTextureCentral = createDestinationBoardTexture('CENTRAL METRO');
+      this.destTextureLighthouse = this.getDestinationTexture('LIGHT HOUSE');
+      this.destTextureCentral = this.getDestinationTexture('CENTRAL METRO');
       this.cmrlLogoTexture = createCMRLBadgeTexture();
     }
 
@@ -475,9 +517,9 @@ export class MetroCarBuilder {
       }
 
       // Add unmirrored destination board and CMRL crest in car's standard orientation (+X forward, +Y left, +Z up)
-      // 1. Digital LED Destination Matrix [● LIGHT HOUSE] above windshield brow
+      // 1. Digital LED Destination Matrix above windshield brow
       const destMat = new THREE.MeshBasicMaterial({
-        map: (destText.includes('CENTRAL') ? this.destTextureCentral : this.destTextureLighthouse) || undefined,
+        map: MetroCarBuilder.getDestinationTexture(destText),
         color: 0xffffff,
         side: THREE.DoubleSide,
       });
@@ -732,6 +774,15 @@ export class MetroCarBuilder {
   }
 }
 
+export interface CarKinematicTransform {
+  center: THREE.Vector3;
+  fwd: THREE.Vector3;
+  up: THREE.Vector3;
+  qTrack: THREE.Quaternion;
+  rearCoupler: THREE.Vector3;
+  frontCoupler: THREE.Vector3;
+}
+
 /**
  * A Complete 4-Car Metro Trainset Consist
  * Consisting of:
@@ -742,35 +793,109 @@ export class TrainConsist {
   private static readonly BOGIE_WHEELBASE_HALF = 8.55 * TRAIN_MODEL_SCALE; // Distance from car center to each bogie (wheelbase scaled by 0.9)
   private static readonly CAR_HALF_LENGTH = 12.07 * TRAIN_MODEL_SCALE;      // Half-length of car body to inter-car coupler
 
+  // Zero-heap static scratch math pool for 60+ FPS performance
+  private static readonly _ptFrontPos = new THREE.Vector3();
+  private static readonly _ptRearPos = new THREE.Vector3();
+  private static readonly _scratchChord = new THREE.Vector3();
+  private static readonly _worldUp = new THREE.Vector3(0, 0, 1);
+  private static readonly _scratchRight = new THREE.Vector3();
+  private static readonly _scratchLeft = new THREE.Vector3();
+  private static readonly _scratchTravelFwd = new THREE.Vector3();
+  private static readonly _scratchBasisMat = new THREE.Matrix4();
+  private static readonly _scratchRotMatrix = new THREE.Matrix4();
+  private static readonly _scratchPLead = new THREE.Vector3();
+  private static readonly _scratchPTrail = new THREE.Vector3();
+  private static readonly _scratchPMid = new THREE.Vector3();
+  private static readonly _scratchP = new THREE.Vector3();
+  private static readonly _scratchQ = new THREE.Quaternion();
+  private static readonly _scratchQChord = new THREE.Quaternion();
+
   public group: THREE.Group = new THREE.Group();
   public path: TrackPath;
   public trackOffset: number; // -1.65 for Up Track, +1.65 for Down Track
-  public speedKmh: number = 60; // Cruise speed in km/h
+  public speedKmh: number = 60; // Instantaneous speed in km/h
   public distanceMeters: number;
   public trainId: string;
-  public line: 'blue' | 'green';
+  public line: MetroLineId;
+  public direction: TravelDirection;
+  public destinationText: string;
+  public telemetry: ActiveTrainTelemetry | null = null;
 
-  private cars: { group: THREE.Group; isFlipped: boolean }[] = [];
-  private gangways: THREE.Group[] = [];
+  public cars: { group: THREE.Group; isFlipped: boolean }[] = [];
+  public gangways: THREE.Group[] = [];
   private carOffsets: number[] = [];
+
+  // Pre-allocated car transforms updated strictly in-place every frame
+  private carTransforms: CarKinematicTransform[] = [
+    { center: new THREE.Vector3(), fwd: new THREE.Vector3(), up: new THREE.Vector3(), qTrack: new THREE.Quaternion(), rearCoupler: new THREE.Vector3(), frontCoupler: new THREE.Vector3() },
+    { center: new THREE.Vector3(), fwd: new THREE.Vector3(), up: new THREE.Vector3(), qTrack: new THREE.Quaternion(), rearCoupler: new THREE.Vector3(), frontCoupler: new THREE.Vector3() },
+    { center: new THREE.Vector3(), fwd: new THREE.Vector3(), up: new THREE.Vector3(), qTrack: new THREE.Quaternion(), rearCoupler: new THREE.Vector3(), frontCoupler: new THREE.Vector3() },
+    { center: new THREE.Vector3(), fwd: new THREE.Vector3(), up: new THREE.Vector3(), qTrack: new THREE.Quaternion(), rearCoupler: new THREE.Vector3(), frontCoupler: new THREE.Vector3() },
+  ];
+
+  /**
+   * Reconfigures this consist for a different scheduled trip (line, direction,
+   * track offset and car orientation) without rebuilding the 3D meshes.
+   * Called by the fleet pool when a consist is reassigned to another trip.
+   */
+  public applyTrip(line: MetroLineId, tripId: string, telemetry: ActiveTrainTelemetry) {
+    const needsReconfig = this.line !== line || this.trainId !== tripId;
+    this.line = line;
+    this.trainId = tripId;
+    if (!needsReconfig) return;
+    this.path = line === 'blue' ? (this.bluePathRef ?? this.path) : (this.greenPathRef ?? this.path);
+    this.direction = telemetry.direction;
+    this.trackOffset = telemetry.direction === 'UP' ? -1.65 : 1.65;
+    // Flip car 3 orientation when direction changed
+    const isDown = this.direction === 'DOWN';
+    this.cars[0].isFlipped = isDown;
+    this.cars[1].isFlipped = isDown;
+    this.cars[2].isFlipped = isDown;
+    this.cars[3].isFlipped = !isDown;
+    if (this.direction === 'UP') {
+      this.carOffsets = [0, -22.21, -44.45, -66.66];
+    } else {
+      this.carOffsets = [0, 22.21, 44.45, 66.66];
+    }
+  }
+
+  private bluePathRef: TrackPath | null = null;
+  private greenPathRef: TrackPath | null = null;
+
+  public registerPaths(bluePath: TrackPath, greenPath: TrackPath) {
+    this.bluePathRef = bluePath;
+    this.greenPathRef = greenPath;
+  }
 
   constructor(
     id: string,
-    line: 'blue' | 'green',
+    line: MetroLineId,
+    direction: TravelDirection,
     path: TrackPath,
     startDistance: number,
-    trackOffset: number,
-    destinationText: string = 'LIGHT HOUSE'
+    destinationText?: string
   ) {
     this.trainId = id;
     this.line = line;
+    this.direction = direction;
     this.path = path;
     this.distanceMeters = startDistance;
-    this.trackOffset = trackOffset;
+    this.trackOffset = direction === 'UP' ? -1.65 : 1.65;
+    this.destinationText =
+      destinationText ||
+      (line === 'blue'
+        ? direction === 'UP'
+          ? 'WIMCO NAGAR'
+          : 'AIRPORT'
+        : direction === 'UP'
+        ? 'CENTRAL METRO'
+        : 'ST. THOMAS MOUNT');
+
+    const isDown = direction === 'DOWN';
 
     // 1. Car 0: Lead Driving Motor Coach (DMC)
-    const frontDMC = MetroCarBuilder.buildDrivingCabCoach(true, destinationText);
-    this.cars.push({ group: frontDMC, isFlipped: false });
+    const frontDMC = MetroCarBuilder.buildDrivingCabCoach(true, this.destinationText);
+    this.cars.push({ group: frontDMC, isFlipped: isDown });
     this.group.add(frontDMC);
 
     // Gangway 1 (between Car 0 and Car 1)
@@ -780,7 +905,7 @@ export class TrainConsist {
 
     // 2. Car 1: Motor Coach with Pantograph (MC)
     const middleMC = MetroCarBuilder.buildMiddleCoach(true);
-    this.cars.push({ group: middleMC, isFlipped: false });
+    this.cars.push({ group: middleMC, isFlipped: isDown });
     this.group.add(middleMC);
 
     // Gangway 2 (between Car 1 and Car 2)
@@ -790,7 +915,7 @@ export class TrainConsist {
 
     // 3. Car 2: Trailer Coach without Pantograph (TC)
     const middleTC = MetroCarBuilder.buildMiddleCoach(false);
-    this.cars.push({ group: middleTC, isFlipped: false });
+    this.cars.push({ group: middleTC, isFlipped: isDown });
     this.group.add(middleTC);
 
     // Gangway 3 (between Car 2 and Car 3)
@@ -798,48 +923,75 @@ export class TrainConsist {
     this.gangways.push(g3);
     this.group.add(g3);
 
-    // 4. Car 3: Rear Driving Motor Coach (DMC, facing backwards with ruby red tail lights)
-    const rearDMC = MetroCarBuilder.buildDrivingCabCoach(false, destinationText);
-    this.cars.push({ group: rearDMC, isFlipped: true });
+    // 4. Car 3: Rear Driving Motor Coach (DMC, with tail lights)
+    const rearDMC = MetroCarBuilder.buildDrivingCabCoach(false, this.destinationText);
+    this.cars.push({ group: rearDMC, isFlipped: !isDown });
     this.group.add(rearDMC);
 
     // Precise center-to-center offsets along track (calibrated to actual car bounding boxes + 0.48m coupler gap):
-    this.carOffsets = [
-      0,
-      -22.21,
-      -44.45,
-      -66.66,
-    ];
+    if (direction === 'UP') {
+      this.carOffsets = [0, -22.21, -44.45, -66.66];
+    } else {
+      this.carOffsets = [0, 22.21, 44.45, 66.66];
+    }
 
     // Initial position
-    this.update(0);
+    this.updateGeometry();
+  }
+
+  /**
+   * Updates destination sign texture dynamically.
+   */
+  public setDestination(destText: string) {
+    if (this.destinationText === destText) return;
+    this.destinationText = destText;
+    const tex = MetroCarBuilder.getDestinationTexture(destText);
+    this.group.traverse((c) => {
+      if ((c.name === 'dest_board_front' || c.name === 'dest_board_rear') && c instanceof THREE.Mesh) {
+        if (c.material) {
+          (c.material as THREE.MeshBasicMaterial).map = tex;
+          (c.material as THREE.MeshBasicMaterial).needsUpdate = true;
+        }
+      }
+    });
   }
 
   /**
    * Updates train position along track path using full 3D Kinematics (Pitch, Yaw, Roll).
-   * Both wheelsets of every car remain rigidly on the rails with accurate slope pitch.
-   * Inter-car couplers and accordion gangways dynamically articulate and flex in 3D with zero gaps.
    */
   public update(deltaSec: number) {
     const speedMs = this.speedKmh / 3.6;
-    this.distanceMeters += speedMs * deltaSec;
+    if (this.direction === 'UP') {
+      this.distanceMeters = (this.distanceMeters + speedMs * deltaSec) % this.path.totalLength;
+    } else {
+      this.distanceMeters =
+        ((this.distanceMeters - speedMs * deltaSec) % this.path.totalLength + this.path.totalLength) %
+        this.path.totalLength;
+    }
+    this.updateGeometry();
+  }
 
+  /**
+   * Updates train position and kinematics directly from timetable schedule telemetry.
+   */
+  public updateFromTelemetry(telemetry: ActiveTrainTelemetry) {
+    this.distanceMeters = telemetry.distanceMeters;
+    this.speedKmh = telemetry.speedKmh;
+    this.telemetry = telemetry;
+    if (telemetry.destination && telemetry.destination !== this.destinationText) {
+      this.setDestination(telemetry.destination);
+    }
+    this.updateGeometry();
+  }
+
+  /**
+   * Full 3D Kinematic geometry update (Pitch, Yaw, Roll, Bogie Track Sampling, Gangway Bellows Articulation).
+   * Executes strictly in-place with zero heap allocations per frame for buttery smooth 60+ FPS motion.
+   */
+  public updateGeometry() {
     const b = TrainConsist.BOGIE_WHEELBASE_HALF;
 
-    const carTransforms: {
-      center: THREE.Vector3;
-      fwd: THREE.Vector3;
-      up: THREE.Vector3;
-      qTrack: THREE.Quaternion;
-      rearCoupler: THREE.Vector3;
-      frontCoupler: THREE.Vector3;
-    }[] = [];
-
     // Half-lengths from car center to coupler faces along longitudinal track axis:
-    // Car 0 (DMC Lead): front nose = 11.36m, rear coupler = 10.85m
-    // Car 1 (MC): front coupler = 10.88m, rear coupler = 10.88m
-    // Car 2 (TC): front coupler = 10.88m, rear coupler = 10.88m
-    // Car 3 (DMC Rear, flipped facing backwards): front coupler (towards Car 2) = 10.85m, rear nose = 11.36m
     const carEndLengths = [
       { front: 11.36, rear: 10.85 },
       { front: 10.88, rear: 10.88 },
@@ -847,77 +999,81 @@ export class TrainConsist {
       { front: 10.85, rear: 11.36 },
     ];
 
-    // 1. Full 3D Kinematic Simulation (Pitch, Yaw, Roll) for every car
+    const isDown = this.direction === 'DOWN';
+
+    // 1. Full 3D Kinematic Simulation (Pitch, Yaw, Roll) for every car with zero allocations
     for (let i = 0; i < this.cars.length; i++) {
       const car = this.cars[i];
       const carDist = this.distanceMeters + this.carOffsets[i];
+      const ct = this.carTransforms[i];
 
-      // Sample front and rear bogie positions on the track spline
-      const ptFront = this.path.getPointAtDistance(carDist + b, this.trackOffset);
-      const ptRear = this.path.getPointAtDistance(carDist - b, this.trackOffset);
+      // Sample front and rear bogie positions directly into scratch vectors
+      this.path.getPointAtDistanceInPlace(carDist + b, this.trackOffset, TrainConsist._ptFrontPos);
+      this.path.getPointAtDistanceInPlace(carDist - b, this.trackOffset, TrainConsist._ptRearPos);
 
-      // Car center is the exact midpoint between the two bogies
-      const centerPos = new THREE.Vector3()
-        .addVectors(ptFront.pos, ptRear.pos)
-        .multiplyScalar(0.5);
-      car.group.position.copy(centerPos);
-      this.updateCarElevationState(car.group, centerPos.z);
+      // Car center is the midpoint between bogies
+      ct.center.addVectors(TrainConsist._ptFrontPos, TrainConsist._ptRearPos).multiplyScalar(0.5);
+      car.group.position.copy(ct.center);
+      this.updateCarElevationState(car.group, ct.center.z);
 
-      // 3D chord vector from rear bogie to front bogie (full 3D direction including slope dz and turn dx, dy!)
-      const chord = new THREE.Vector3().subVectors(ptFront.pos, ptRear.pos);
-      const fwd = chord.clone().normalize();
+      // 3D chord vector from rear bogie to front bogie
+      TrainConsist._scratchChord.subVectors(TrainConsist._ptFrontPos, TrainConsist._ptRearPos);
+      ct.fwd.copy(TrainConsist._scratchChord).normalize();
 
-      // Orthonormal frame (Forward, Left, Up) in full 3D:
-      const worldUp = new THREE.Vector3(0, 0, 1);
-      const right = new THREE.Vector3().crossVectors(fwd, worldUp).normalize();
-      const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
-      const left = right.clone().negate();
+      // Orthonormal frame (Forward, Left, Up) in full 3D
+      TrainConsist._scratchRight.crossVectors(ct.fwd, TrainConsist._worldUp).normalize();
+      ct.up.crossVectors(TrainConsist._scratchRight, ct.fwd).normalize();
+      TrainConsist._scratchLeft.copy(TrainConsist._scratchRight).negate();
 
-      const rotMatrix = new THREE.Matrix4();
-      if (car.isFlipped) {
-        // Rear cab DMC (Car 3) faces backward along track, roof pointing UP
-        rotMatrix.makeBasis(
-          fwd.clone().negate(),
-          left.clone().negate(),
-          up
+      if (isDown) {
+        // DOWN track travels along -fwd (decreasing distance)
+        TrainConsist._scratchTravelFwd.copy(ct.fwd).negate();
+        const travelRight = TrainConsist._scratchLeft;
+        const travelLeft = TrainConsist._scratchRight;
+
+        if (car.isFlipped) {
+          TrainConsist._scratchRotMatrix.makeBasis(TrainConsist._scratchTravelFwd, travelLeft, ct.up);
+        } else {
+          TrainConsist._scratchRotMatrix.makeBasis(ct.fwd, TrainConsist._scratchLeft, ct.up);
+        }
+
+        ct.frontCoupler.copy(ct.center).addScaledVector(ct.fwd, -carEndLengths[i].front);
+        ct.rearCoupler.copy(ct.center).addScaledVector(ct.fwd, carEndLengths[i].rear);
+        ct.qTrack.setFromRotationMatrix(
+          TrainConsist._scratchBasisMat.makeBasis(TrainConsist._scratchTravelFwd, travelLeft, ct.up)
         );
       } else {
-        rotMatrix.makeBasis(fwd, left, up);
+        // UP track travels along +fwd (increasing distance)
+        if (car.isFlipped) {
+          TrainConsist._scratchTravelFwd.copy(ct.fwd).negate();
+          const flippedLeft = TrainConsist._scratchRight;
+          TrainConsist._scratchRotMatrix.makeBasis(TrainConsist._scratchTravelFwd, flippedLeft, ct.up);
+        } else {
+          TrainConsist._scratchRotMatrix.makeBasis(ct.fwd, TrainConsist._scratchLeft, ct.up);
+        }
+
+        ct.frontCoupler.copy(ct.center).addScaledVector(ct.fwd, carEndLengths[i].front);
+        ct.rearCoupler.copy(ct.center).addScaledVector(ct.fwd, -carEndLengths[i].rear);
+        ct.qTrack.setFromRotationMatrix(
+          TrainConsist._scratchBasisMat.makeBasis(ct.fwd, TrainConsist._scratchLeft, ct.up)
+        );
       }
 
-      car.group.rotation.setFromRotationMatrix(rotMatrix);
-
-      // Coupler face positions in world space along track forward direction:
-      const frontCoupler = centerPos.clone().addScaledVector(fwd, carEndLengths[i].front);
-      const rearCoupler = centerPos.clone().addScaledVector(fwd, -carEndLengths[i].rear);
-
-      // Track-aligned 3D orientation quaternion
-      const qTrack = new THREE.Quaternion().setFromRotationMatrix(
-        new THREE.Matrix4().makeBasis(fwd, left, up)
-      );
-
-      carTransforms.push({
-        center: centerPos,
-        fwd,
-        up,
-        qTrack,
-        rearCoupler,
-        frontCoupler,
-      });
+      car.group.rotation.setFromRotationMatrix(TrainConsist._scratchRotMatrix);
     }
 
-    // 2. Position, Articulate, and Dynamically Flex Gangway Accordion Bellows with True Physics
+    // 2. Position, Articulate, and Dynamically Flex Gangway Accordion Bellows
     for (let g = 0; g < this.gangways.length; g++) {
       const gangway = this.gangways[g];
-      const leading = carTransforms[g];
-      const trailing = carTransforms[g + 1];
+      const leading = this.carTransforms[g];
+      const trailing = this.carTransforms[g + 1];
 
       const leadingRear = leading.rearCoupler;
       const trailingFront = trailing.frontCoupler;
       const span = leadingRear.distanceTo(trailingFront);
 
-      const pMid = new THREE.Vector3().addVectors(leadingRear, trailingFront).multiplyScalar(0.5);
-      this.updateGangwayElevationState(gangway, pMid.z);
+      TrainConsist._scratchPMid.addVectors(leadingRear, trailingFront).multiplyScalar(0.5);
+      this.updateGangwayElevationState(gangway, TrainConsist._scratchPMid.z);
 
       const { pleats, segments, endcapLead, endcapTrail, footplate, coupler, numPleats } = gangway.userData as {
         pleats: THREE.Mesh[];
@@ -931,58 +1087,55 @@ export class TrainConsist {
 
       if (!pleats || pleats.length === 0) continue;
 
-      // 1. Vestibule Doorway Endcaps:
-      // Seals open doorway cutouts inside both cars so white car interior is never exposed
+      // 1. Vestibule Doorway Endcaps
       if (endcapLead) {
-        const pLead = new THREE.Vector3().lerpVectors(leadingRear, trailingFront, -0.22);
-        endcapLead.position.copy(pLead);
+        TrainConsist._scratchPLead.lerpVectors(leadingRear, trailingFront, -0.22);
+        endcapLead.position.copy(TrainConsist._scratchPLead);
         endcapLead.quaternion.copy(leading.qTrack);
       }
       if (endcapTrail) {
-        const pTrail = new THREE.Vector3().lerpVectors(leadingRear, trailingFront, 1.22);
-        endcapTrail.position.copy(pTrail);
+        TrainConsist._scratchPTrail.lerpVectors(leadingRear, trailingFront, 1.22);
+        endcapTrail.position.copy(TrainConsist._scratchPTrail);
         endcapTrail.quaternion.copy(trailing.qTrack);
       }
 
-      // 2. True Accordion Bellows Kinematics:
-      // Pleats start 8cm inside leading collar and terminate 8cm inside trailing collar,
-      // completely bridging across the inter-car gap with zero visible longitudinal gaps.
+      // 2. Accordion Bellows Kinematics
       for (let i = 0; i < numPleats; i++) {
         const t = -0.16 + (i / (numPleats - 1)) * 1.32;
-        const p = new THREE.Vector3().lerpVectors(leadingRear, trailingFront, t);
+        TrainConsist._scratchP.lerpVectors(leadingRear, trailingFront, t);
         const qClamp = THREE.MathUtils.clamp(t, 0, 1);
-        const q = new THREE.Quaternion().copy(leading.qTrack).slerp(trailing.qTrack, qClamp);
+        TrainConsist._scratchQ.copy(leading.qTrack).slerp(trailing.qTrack, qClamp);
 
-        pleats[i].position.copy(p);
-        pleats[i].quaternion.copy(q);
+        pleats[i].position.copy(TrainConsist._scratchP);
+        pleats[i].quaternion.copy(TrainConsist._scratchQ);
       }
 
-      // Connecting inner accordion bellows segments between pleats
+      // Inner accordion bellows segments between pleats
       for (let i = 0; i < numPleats - 1; i++) {
         const tMid = -0.16 + ((i + 0.5) / (numPleats - 1)) * 1.32;
-        const p = new THREE.Vector3().lerpVectors(leadingRear, trailingFront, tMid);
+        TrainConsist._scratchP.lerpVectors(leadingRear, trailingFront, tMid);
         const qMidClamp = THREE.MathUtils.clamp(tMid, 0, 1);
-        const q = new THREE.Quaternion().copy(leading.qTrack).slerp(trailing.qTrack, qMidClamp);
+        TrainConsist._scratchQ.copy(leading.qTrack).slerp(trailing.qTrack, qMidClamp);
         const segLen = (span * 1.32) / (numPleats - 1);
 
-        segments[i].position.copy(p);
-        segments[i].quaternion.copy(q);
+        segments[i].position.copy(TrainConsist._scratchP);
+        segments[i].quaternion.copy(TrainConsist._scratchQ);
         segments[i].scale.set(segLen * 1.15, 1, 1);
       }
 
       // 3. Gangway Floor Footplate
       if (footplate) {
-        const qChord = new THREE.Quaternion().copy(leading.qTrack).slerp(trailing.qTrack, 0.5);
-        footplate.position.copy(pMid);
-        footplate.quaternion.copy(qChord);
+        TrainConsist._scratchQChord.copy(leading.qTrack).slerp(trailing.qTrack, 0.5);
+        footplate.position.copy(TrainConsist._scratchPMid);
+        footplate.quaternion.copy(TrainConsist._scratchQChord);
         footplate.scale.set(span * 1.10, 1, 1);
       }
 
       // 4. Mechanical coupler bar connecting draft gear at axle level
       if (coupler) {
-        const qChord = new THREE.Quaternion().copy(leading.qTrack).slerp(trailing.qTrack, 0.5);
-        coupler.position.copy(pMid);
-        coupler.quaternion.copy(qChord);
+        TrainConsist._scratchQChord.copy(leading.qTrack).slerp(trailing.qTrack, 0.5);
+        coupler.position.copy(TrainConsist._scratchPMid);
+        coupler.quaternion.copy(TrainConsist._scratchQChord);
         coupler.scale.set(span * 1.05, 1, 1);
       }
     }
@@ -990,9 +1143,6 @@ export class TrainConsist {
 
   /**
    * Updates opacity, depth-test, and interior visibility of a car based on its elevation.
-   * - z >= 2.0m: Fully elevated (100% opaque, original design, interior seats visible)
-   * - z <= -1.0m: Fully underground (40% ghost overlay, depthTest: false, interior seats completely HIDDEN)
-   * - -1.0m < z < 2.0m: Smooth transition through portal
    */
   private updateCarElevationState(carGroup: THREE.Group, z: number) {
     if (carGroup.children.length === 0) return;
@@ -1008,12 +1158,10 @@ export class TrainConsist {
     const isUnderground = undergroundRatio >= 0.99;
     const opacity = isFullyElevated ? 1.0 : (isUnderground ? 0.40 : 1.0 - undergroundRatio * 0.60);
     const transparent = !isFullyElevated;
-    const depthTest = isFullyElevated;
     const renderOrder = isFullyElevated ? 0 : 999;
 
     carGroup.traverse((child) => {
       if (child.userData.isInterior) {
-        // STRICT RULE: Hide interior seats whenever entering tunnel or underground!
         child.visible = isFullyElevated;
       } else if (child instanceof THREE.Mesh) {
         child.visible = true;
@@ -1055,8 +1203,7 @@ export class TrainConsist {
     gangway.userData.undergroundRatio = undergroundRatio;
 
     const isFullyElevated = undergroundRatio <= 0.01;
-    const isUnderground = undergroundRatio >= 0.99;
-    const opacity = isFullyElevated ? 1.0 : (isUnderground ? 0.40 : 1.0 - undergroundRatio * 0.60);
+    const opacity = isFullyElevated ? 1.0 : (undergroundRatio >= 0.99 ? 0.40 : 1.0 - undergroundRatio * 0.60);
     const transparent = !isFullyElevated;
     const renderOrder = isFullyElevated ? 0 : 999;
 
@@ -1077,85 +1224,130 @@ export class TrainConsist {
   }
 }
 
-
 /**
  * Fleet Manager for Chennai Metro 3D Trains
- * Manages active trainsets on both Blue and Green corridors.
+ *
+ * STRICTLY REAL-TIME: every scheduled trip currently in service (departed,
+ * not yet arrived) gets its own live 3D consist. The pool grows and shrinks
+ * exactly with the number of trains the official CMRL timetable puts on the
+ * tracks at this instant of wall-clock IST. No fast-forward, no scrubbing.
  */
 export class MetroTrainFleet {
   public group: THREE.Group = new THREE.Group();
   public trains: TrainConsist[] = [];
 
+  // Wall-clock IST clock state (the one and only time source)
+  public simTimeSeconds: number;
+  public isPaused: boolean = false;
+  public selectedDay: DayOfWeek;
+
+  private greenPath: TrackPath;
+  private bluePath: TrackPath;
+  private schedule: MasterSchedule;
+
   constructor(greenPath: TrackPath, bluePath: TrackPath) {
-    // Initialize 3D GLTF model loader
+    this.greenPath = greenPath;
+    this.bluePath = bluePath;
+    this.simTimeSeconds = getCurrentISTSeconds();
+    this.selectedDay = getSystemDayOfWeek();
+    this.schedule = getMasterScheduleForDay(this.selectedDay);
+
     MetroCarBuilder.initModelLoader();
 
-    // 1. Blue Line Northbound Train (approaching Saidapet portal from south viaduct)
-    const blueUp = new TrainConsist(
-      'blue-up-1',
-      'blue',
-      bluePath,
-      8200,
-      -1.65,
-      'WIMCO NAGAR'
-    );
-    this.trains.push(blueUp);
-    this.group.add(blueUp.group);
+    // Seed with empty consists; the first sync builds every active train
+    this.syncFleetWithSchedule();
+  }
 
-    // 2. Blue Line Northbound Train (deep subterranean tunnel through Anna Salai / Central)
-    const blueUp2 = new TrainConsist(
-      'blue-up-2',
-      'blue',
-      bluePath,
-      14000,
-      -1.65,
-      'WIMCO NAGAR'
-    );
-    this.trains.push(blueUp2);
-    this.group.add(blueUp2.group);
+  public setSelectedDay(day: DayOfWeek) {
+    if (this.selectedDay !== day) {
+      this.selectedDay = day;
+      this.schedule = getMasterScheduleForDay(day);
+      this.syncFleetWithSchedule();
+    }
+  }
 
-    // 3. Blue Line Southbound Train (subterranean tunnel heading south toward Saidapet portal)
-    const blueDown = new TrainConsist(
-      'blue-down-1',
-      'blue',
-      bluePath,
-      18000,
-      1.65,
-      'AIRPORT'
-    );
-    this.trains.push(blueDown);
-    this.group.add(blueDown.group);
+  public getSelectedDay(): DayOfWeek {
+    return this.selectedDay;
+  }
 
-    // 4. Green Line Eastbound Train (approaching Thirumangalam underground portal)
-    const greenUp = new TrainConsist(
-      'green-up-1',
-      'green',
-      greenPath,
-      11400,
-      -1.65,
-      'CENTRAL METRO'
-    );
-    this.trains.push(greenUp);
-    this.group.add(greenUp.group);
+  /**
+   * Synchronize the 3D fleet pool with every trip active at wall-clock IST.
+   * A consist is matched 1:1 to an active ScheduledTrip; the pool is
+   * rebuilt whenever the set of active trips changes (trains appearing at
+   * departure time and disappearing after arrival + terminus dwell).
+   */
+  public syncFleetWithSchedule() {
+    const t = this.simTimeSeconds;
 
-    // 5. Green Line Westbound Train (deep underground tunnel through Shenoy Nagar)
-    const greenDown = new TrainConsist(
-      'green-down-1',
-      'green',
-      greenPath,
-      16000,
-      1.65,
-      'ST. THOMAS MOUNT'
-    );
-    this.trains.push(greenDown);
-    this.group.add(greenDown.group);
+    // Collect all trips in service right now (with terminus dwell tail)
+    const active: ScheduledTrip[] = [];
+    const pushActive = (list: ScheduledTrip[]) => {
+      for (const tr of list) {
+        if (t >= tr.departureTimeSec && t < tr.arrivalTimeSec + 90) {
+          active.push(tr);
+        }
+      }
+    };
+    pushActive(this.schedule.blueUp);
+    pushActive(this.schedule.blueDown);
+    pushActive(this.schedule.greenUp);
+    pushActive(this.schedule.greenDown);
+
+    // Match each active trip to a slot; create/destroy consists as needed
+    while (this.trains.length < active.length) {
+      const consist = new TrainConsist(
+        'pool-pending',
+        'blue',
+        'UP',
+        this.bluePath,
+        0,
+        ''
+      );
+      consist.registerPaths(this.bluePath, this.greenPath);
+      this.trains.push(consist);
+      this.group.add(consist.group);
+    }
+    while (this.trains.length > active.length) {
+      const removed = this.trains.pop();
+      if (removed) {
+        this.group.remove(removed.group);
+      }
+    }
+
+    for (let i = 0; i < active.length; i++) {
+      const trip = active[i];
+      const consist = this.trains[i];
+      const telemetry = evaluateTripStateAtTime(trip, t);
+      // Only in-service trips (already departed) drive kinematics; the 90s
+      // tail keeps the train visible at the terminus a little longer.
+      consist.applyTrip(trip.line, trip.tripId, telemetry);
+      consist.updateFromTelemetry(telemetry);
+    }
   }
 
   public update(deltaSec: number) {
-    const clampedDelta = Math.min(deltaSec, 0.1);
-    for (const train of this.trains) {
-      train.update(clampedDelta);
+    if (!this.isPaused) {
+      // Strict real-time: clock always equals wall-clock IST
+      this.simTimeSeconds = getCurrentISTSeconds();
+      this.syncFleetWithSchedule();
     }
+  }
+
+  public getSimTime(): number {
+    return this.simTimeSeconds;
+  }
+
+  public setPaused(paused: boolean) {
+    this.isPaused = paused;
+  }
+
+  public getFleetTelemetry(): (ActiveTrainTelemetry | null)[] {
+    return this.trains.map((t) => t.telemetry);
+  }
+
+  public getPrimaryTrainTelemetry(index: number = 0): ActiveTrainTelemetry | null {
+    const safeIndex = Math.max(0, Math.min(this.trains.length - 1, index));
+    return this.trains[safeIndex]?.telemetry || null;
   }
 
   public setTheme(theme: 'light' | 'dark') {

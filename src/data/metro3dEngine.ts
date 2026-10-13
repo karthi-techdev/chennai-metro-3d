@@ -252,11 +252,16 @@ export function generateMetro3DStructures(): Metro3DGeometry {
 
     const rampStart = 3820;
     const portalIdx = 4015;
-    const gDeckBase = 12.0; // Level 1 clearance
-    const gGirderTop = 13.2;
-    const gDeckTop = 13.6;
-    const gParapetTop = 14.8;
-    const gRailTop = 13.85;
+
+    // Green Line Elevation Function:
+    // St. Thomas Mount terminal (12.5m) -> Soaring up to 19.5m (Level 2) at Alandur Interchange over Blue Line -> Descending back to 12.5m towards Ekkattuthangal
+    const getGreenElev = (idx: number): number => {
+      if (idx >= 180 && idx <= 750) {
+        const t = (idx - 466) / 284;
+        return 12.5 + 7.0 * Math.pow(Math.cos((t * Math.PI) / 2), 2);
+      }
+      return 12.5;
+    };
 
     // A. Ground Drop Shadow (fake-road-shade from Mapbox blog)
     viaductShadowFeatures.push({
@@ -268,105 +273,172 @@ export function generateMetro3DStructures(): Metro3DGeometry {
       },
     });
 
-    // B. Unbroken Elevated Viaduct Ribbon (0 to 3820)
-    // 1. Box Girder Soffit / Underbelly
-    const bgPoly = createRibbonFromEdges(
-      boxGirderLeft.slice(0, rampStart + 1),
-      boxGirderRight.slice(0, rampStart + 1)
-    );
-    if (bgPoly) {
-      viaductBoxGirderFeatures.push({
-        type: 'Feature',
-        properties: { base_height: gDeckBase, render_height: gGirderTop, color: BRIDGE_COLORS.boxGirder },
-        geometry: { type: 'Polygon', coordinates: [bgPoly] },
-      });
-    }
+    // Helper to render flat elevated spans for Green Line
+    const renderGreenSpan = (sIdx: number, eIdx: number, baseH: number) => {
+      const gTop = baseH + 1.2;
+      const dTop = baseH + 1.6;
+      const pTop = baseH + 2.8;
+      const rTop = dTop + 0.25;
 
-    // 2. Slate-Blue Running Deck (road-base-bridge)
-    const deckPoly = createRibbonFromEdges(
-      deckLeft.slice(0, rampStart + 1),
-      deckRight.slice(0, rampStart + 1)
-    );
-    if (deckPoly) {
-      viaductDeckFeatures.push({
-        type: 'Feature',
-        properties: { base_height: gGirderTop, render_height: gDeckTop, color: BRIDGE_COLORS.deckSurface },
-        geometry: { type: 'Polygon', coordinates: [deckPoly] },
-      });
-    }
-
-    // 3. Beveled Parapet Edge Barrier Curbs (Left & Right Margins)
-    const pLeftPoly = createRibbonFromEdges(
-      parapetOuterLeft.slice(0, rampStart + 1),
-      parapetInnerLeft.slice(0, rampStart + 1)
-    );
-    if (pLeftPoly) {
-      viaductParapetsFeatures.push({
-        type: 'Feature',
-        properties: { base_height: gGirderTop, render_height: gParapetTop, color: BRIDGE_COLORS.parapetCurb },
-        geometry: { type: 'Polygon', coordinates: [pLeftPoly] },
-      });
-    }
-
-    const pRightPoly = createRibbonFromEdges(
-      parapetInnerRight.slice(0, rampStart + 1),
-      parapetOuterRight.slice(0, rampStart + 1)
-    );
-    if (pRightPoly) {
-      viaductParapetsFeatures.push({
-        type: 'Feature',
-        properties: { base_height: gGirderTop, render_height: gParapetTop, color: BRIDGE_COLORS.parapetCurb },
-        geometry: { type: 'Polygon', coordinates: [pRightPoly] },
-      });
-    }
-
-    // 4. Twin Standard-Gauge Running Rails + Center Transit Stripe
-    const addRail = (lEdge: [number, number][], rEdge: [number, number][], base: number, top: number, color: string) => {
-      const p = createRibbonFromEdges(lEdge.slice(0, rampStart + 1), rEdge.slice(0, rampStart + 1));
-      if (p) {
-        viaductTrackFeatures.push({
+      const bgP = createRibbonFromEdges(boxGirderLeft.slice(sIdx, eIdx + 1), boxGirderRight.slice(sIdx, eIdx + 1));
+      if (bgP) {
+        viaductBoxGirderFeatures.push({
           type: 'Feature',
-          properties: { base_height: base, render_height: top, color },
-          geometry: { type: 'Polygon', coordinates: [p] },
+          properties: { base_height: baseH, render_height: gTop, color: BRIDGE_COLORS.boxGirder },
+          geometry: { type: 'Polygon', coordinates: [bgP] },
+        });
+      }
+
+      const dP = createRibbonFromEdges(deckLeft.slice(sIdx, eIdx + 1), deckRight.slice(sIdx, eIdx + 1));
+      if (dP) {
+        viaductDeckFeatures.push({
+          type: 'Feature',
+          properties: { base_height: gTop, render_height: dTop, color: BRIDGE_COLORS.deckSurface },
+          geometry: { type: 'Polygon', coordinates: [dP] },
+        });
+      }
+
+      const plP = createRibbonFromEdges(parapetOuterLeft.slice(sIdx, eIdx + 1), parapetInnerLeft.slice(sIdx, eIdx + 1));
+      if (plP) {
+        viaductParapetsFeatures.push({
+          type: 'Feature',
+          properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
+          geometry: { type: 'Polygon', coordinates: [plP] },
+        });
+      }
+
+      const prP = createRibbonFromEdges(parapetInnerRight.slice(sIdx, eIdx + 1), parapetOuterRight.slice(sIdx, eIdx + 1));
+      if (prP) {
+        viaductParapetsFeatures.push({
+          type: 'Feature',
+          properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
+          geometry: { type: 'Polygon', coordinates: [prP] },
+        });
+      }
+
+      const addR = (lE: [number, number][], rE: [number, number][], color: string) => {
+        const rp = createRibbonFromEdges(lE.slice(sIdx, eIdx + 1), rE.slice(sIdx, eIdx + 1));
+        if (rp) {
+          viaductTrackFeatures.push({
+            type: 'Feature',
+            properties: { base_height: dTop, render_height: rTop, color },
+            geometry: { type: 'Polygon', coordinates: [rp] },
+          });
+        }
+      };
+      addR(upRail1Left, upRail1Right, BRIDGE_COLORS.steelRail);
+      addR(upRail2Left, upRail2Right, BRIDGE_COLORS.steelRail);
+      addR(downRail1Left, downRail1Right, BRIDGE_COLORS.steelRail);
+      addR(downRail2Left, downRail2Right, BRIDGE_COLORS.steelRail);
+      addR(centerStripeLeft, centerStripeRight, BRIDGE_COLORS.greenAccent);
+
+      for (let i = sIdx; i < eIdx; i += 10) {
+        const coord = greenSmoothed[i];
+        const nextC = greenSmoothed[Math.min(greenSmoothed.length - 1, i + 2)];
+        const prevC = greenSmoothed[Math.max(0, i - 2)];
+        const angle = Math.atan2(nextC[1] - prevC[1], nextC[0] - prevC[0]);
+
+        const colBox = createBoxPolygon(coord, 2.4, 2.4, angle);
+        viaductPillarFeatures.push({
+          type: 'Feature',
+          properties: { base_height: 0, render_height: baseH, color: BRIDGE_COLORS.pierConcrete },
+          geometry: { type: 'Polygon', coordinates: [colBox] },
+        });
+
+        const capBox = createBoxPolygon(coord, 7.2, 2.4, angle + Math.PI / 2);
+        viaductPillarFeatures.push({
+          type: 'Feature',
+          properties: { base_height: baseH - 1.2, render_height: baseH, color: BRIDGE_COLORS.capConcrete },
+          geometry: { type: 'Polygon', coordinates: [capBox] },
         });
       }
     };
-    addRail(upRail1Left, upRail1Right, gDeckTop, gRailTop, BRIDGE_COLORS.steelRail);
-    addRail(upRail2Left, upRail2Right, gDeckTop, gRailTop, BRIDGE_COLORS.steelRail);
-    addRail(downRail1Left, downRail1Right, gDeckTop, gRailTop, BRIDGE_COLORS.steelRail);
-    addRail(downRail2Left, downRail2Right, gDeckTop, gRailTop, BRIDGE_COLORS.steelRail);
-    addRail(centerStripeLeft, centerStripeRight, gDeckTop, gDeckTop + 0.08, BRIDGE_COLORS.greenAccent);
 
-    // 5. Support Piers & Cantilever Hammerhead Crossheads (Every 30m)
-    for (let i = 0; i < rampStart; i += 10) {
-      const coord = greenSmoothed[i];
-      const nextC = greenSmoothed[Math.min(greenSmoothed.length - 1, i + 2)];
-      const prevC = greenSmoothed[Math.max(0, i - 2)];
-      const angle = Math.atan2(nextC[1] - prevC[1], nextC[0] - prevC[0]);
+    // 1. Flat Pre-Alandur (0 to 180) - St. Thomas Mount approach (12.5m)
+    renderGreenSpan(0, 180, 12.5);
 
-      // Pier column: from 0m flush to girder base (12.0m)
-      const colBox = createBoxPolygon(coord, 2.4, 2.4, angle);
-      viaductPillarFeatures.push({
+    // 2. Alandur Soaring Upper Deck Flyover (180 to 750) - Climbing over Blue Line up to 19.5m!
+    for (let i = 180; i < 750; i++) {
+      const baseH = Number(getGreenElev(i).toFixed(2));
+      const gTop = Number((baseH + 1.2).toFixed(2));
+      const dTop = Number((baseH + 1.6).toFixed(2));
+      const pTop = Number((baseH + 2.8).toFixed(2));
+      const rTop = Number((dTop + 0.25).toFixed(2));
+
+      const bgQuad = [boxGirderLeft[i], boxGirderLeft[i + 1], boxGirderRight[i + 1], boxGirderRight[i], boxGirderLeft[i]];
+      viaductBoxGirderFeatures.push({
         type: 'Feature',
-        properties: { base_height: 0, render_height: gDeckBase, color: BRIDGE_COLORS.pierConcrete },
-        geometry: { type: 'Polygon', coordinates: [colBox] },
+        properties: { base_height: baseH, render_height: gTop, color: BRIDGE_COLORS.boxGirder },
+        geometry: { type: 'Polygon', coordinates: [bgQuad] },
       });
 
-      // Cantilever hammerhead beam cap: flush under girder
-      const capBox = createBoxPolygon(coord, 7.2, 2.4, angle + Math.PI / 2);
-      viaductPillarFeatures.push({
+      const dQuad = [deckLeft[i], deckLeft[i + 1], deckRight[i + 1], deckRight[i], deckLeft[i]];
+      viaductDeckFeatures.push({
         type: 'Feature',
-        properties: { base_height: gDeckBase - 1.2, render_height: gDeckBase, color: BRIDGE_COLORS.capConcrete },
-        geometry: { type: 'Polygon', coordinates: [capBox] },
+        properties: { base_height: gTop, render_height: dTop, color: BRIDGE_COLORS.deckSurface },
+        geometry: { type: 'Polygon', coordinates: [dQuad] },
       });
+
+      const plQuad = [parapetOuterLeft[i], parapetOuterLeft[i + 1], parapetInnerLeft[i + 1], parapetInnerLeft[i], parapetOuterLeft[i]];
+      viaductParapetsFeatures.push({
+        type: 'Feature',
+        properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
+        geometry: { type: 'Polygon', coordinates: [plQuad] },
+      });
+      const prQuad = [parapetInnerRight[i], parapetInnerRight[i + 1], parapetOuterRight[i + 1], parapetOuterRight[i], parapetInnerRight[i]];
+      viaductParapetsFeatures.push({
+        type: 'Feature',
+        properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
+        geometry: { type: 'Polygon', coordinates: [prQuad] },
+      });
+
+      const makeTrackQuad = (lE: [number, number][], rE: [number, number][], color: string) => {
+        const q = [lE[i], lE[i + 1], rE[i + 1], rE[i], lE[i]];
+        viaductTrackFeatures.push({
+          type: 'Feature',
+          properties: { base_height: dTop, render_height: rTop, color },
+          geometry: { type: 'Polygon', coordinates: [q] },
+        });
+      };
+      makeTrackQuad(upRail1Left, upRail1Right, BRIDGE_COLORS.steelRail);
+      makeTrackQuad(upRail2Left, upRail2Right, BRIDGE_COLORS.steelRail);
+      makeTrackQuad(downRail1Left, downRail1Right, BRIDGE_COLORS.steelRail);
+      makeTrackQuad(downRail2Left, downRail2Right, BRIDGE_COLORS.steelRail);
+      makeTrackQuad(centerStripeLeft, centerStripeRight, BRIDGE_COLORS.greenAccent);
+
+      // Support pillars under Alandur soaring upper deck (up to 19.5m!)
+      if (i % 10 === 0) {
+        const coord = greenSmoothed[i];
+        const nextC = greenSmoothed[Math.min(greenSmoothed.length - 1, i + 2)];
+        const prevC = greenSmoothed[Math.max(0, i - 2)];
+        const angle = Math.atan2(nextC[1] - prevC[1], nextC[0] - prevC[0]);
+
+        const colBox = createBoxPolygon(coord, 2.6, 2.6, angle);
+        viaductPillarFeatures.push({
+          type: 'Feature',
+          properties: { base_height: 0, render_height: baseH, color: BRIDGE_COLORS.pierConcrete },
+          geometry: { type: 'Polygon', coordinates: [colBox] },
+        });
+
+        const capBox = createBoxPolygon(coord, 7.4, 2.4, angle + Math.PI / 2);
+        viaductPillarFeatures.push({
+          type: 'Feature',
+          properties: { base_height: baseH - 1.3, render_height: baseH, color: BRIDGE_COLORS.capConcrete },
+          geometry: { type: 'Polygon', coordinates: [capBox] },
+        });
+      }
     }
+
+    // 3. Flat Post-Alandur through Ekkattuthangal to Koyambedu (750 to 3820)
+    renderGreenSpan(750, rampStart, 12.5);
 
     // C. Transition Incline Ramp & Retaining Cut Trench (3820 to 4015)
     const rampLen = portalIdx - rampStart;
+    const gDeckBase = 12.5;
     for (let i = rampStart; i < portalIdx; i++) {
       const t = (i - rampStart) / rampLen;
       const smoothT = t * t * (3 - 2 * t);
-      const elev = gDeckBase * (1 - smoothT); // 12m down to 0m
+      const elev = gDeckBase * (1 - smoothT); // 12.5m down to 0m
 
       const isLow = elev < 2.0;
       const rBase = isLow ? 0 : Number(elev.toFixed(2));
@@ -579,15 +651,8 @@ export function generateMetro3DStructures(): Metro3DGeometry {
     const newWasherPortalIdx = 8260;
     const northRampEnd = 8420;
 
-    // Elevation function for South Elevated Section (0 to 2720)
-    // Seamlessly climbs over Alandur (peak at index 1648, base: 19.5m!)
-    const getSouthElev = (idx: number): number => {
-      if (idx >= 1348 && idx <= 1948) {
-        const t = (idx - 1648) / 300;
-        return 12.5 + 7.0 * Math.pow(Math.cos((t * Math.PI) / 2), 2);
-      }
-      return 12.5;
-    };
+    // Blue Line stays at Level 1 (12.5m) throughout South Viaduct through Alandur!
+    const getSouthElev = (_idx: number): number => 12.5;
 
     // A. Ground Drop Shadows along Blue Elevated Spans
     viaductShadowFeatures.push({
@@ -608,8 +673,7 @@ export function generateMetro3DStructures(): Metro3DGeometry {
     });
 
     // B. South Elevated Section (0 to 2720):
-    // Subdivided into 0 to 1348 (flat), 1348 to 1948 (Alandur multi-tier soar), 1948 to 2720 (flat)
-    // 1. Flat Pre-Alandur (0 to 1348)
+    // 1. Flat Pre-Alandur Approach (0 to 1380)
     const renderFlatSpan = (sIdx: number, eIdx: number, baseH: number) => {
       const gTop = baseH + 1.2;
       const dTop = baseH + 1.6;
@@ -691,86 +755,137 @@ export function generateMetro3DStructures(): Metro3DGeometry {
       }
     };
 
-    renderFlatSpan(0, 1348, 12.5);
+    renderFlatSpan(0, 1380, 12.5);
 
-    // 2. Alandur Soaring Flyover (1348 to 1948) - 3m micro-quads with continuous slope
-    for (let i = 1348; i < 1948; i++) {
-      const baseH = Number(getSouthElev(i).toFixed(2));
-      const gTop = Number((baseH + 1.2).toFixed(2));
-      const dTop = Number((baseH + 1.6).toFixed(2));
-      const pTop = Number((baseH + 2.8).toFixed(2));
-      const rTop = Number((dTop + 0.25).toFixed(2));
+    // 2. Alandur 4-Way Splitting & Joining Viaduct Junction (1380 to 1880, Level 1: 12.5m)
+    // Replicates the authentic CMRL 4-track layout with Outer West & Outer East bifurcation!
+    {
+      const baseH = 12.5;
+      const gTop = baseH + 1.2;
+      const dTop = baseH + 1.6;
+      const pTop = baseH + 2.8;
+      const rTop = dTop + 0.25;
 
-      // Box girder quad
-      const bgQuad = [boxGirderLeft[i], boxGirderLeft[i + 1], boxGirderRight[i + 1], boxGirderRight[i], boxGirderLeft[i]];
-      viaductBoxGirderFeatures.push({
-        type: 'Feature',
-        properties: { base_height: baseH, render_height: gTop, color: BRIDGE_COLORS.boxGirder },
-        geometry: { type: 'Polygon', coordinates: [bgQuad] },
-      });
+      // Central through-deck (Tracks 2 & 3)
+      renderFlatSpan(1380, 1880, 12.5);
 
-      // Slate deck quad
-      const dQuad = [deckLeft[i], deckLeft[i + 1], deckRight[i + 1], deckRight[i], deckLeft[i]];
-      viaductDeckFeatures.push({
-        type: 'Feature',
-        properties: { base_height: gTop, render_height: dTop, color: BRIDGE_COLORS.deckSurface },
-        geometry: { type: 'Polygon', coordinates: [dQuad] },
-      });
+      // Calculate dynamic lateral offset for the outer bifurcation branches:
+      // Fanning out from 1380 to 1500, parallel through Alandur station (1500 to 1760), and converging back from 1760 to 1880
+      for (let i = 1380; i < 1880; i++) {
+        let fOut = 0;
+        if (i < 1500) {
+          const t = (i - 1380) / 120;
+          fOut = t * t * (3 - 2 * t);
+        } else if (i <= 1760) {
+          fOut = 1.0;
+        } else {
+          const t = (i - 1760) / 120;
+          fOut = 1.0 - t * t * (3 - 2 * t);
+        }
 
-      // Left & right parapet curbs
-      const plQuad = [parapetOuterLeft[i], parapetOuterLeft[i + 1], parapetInnerLeft[i + 1], parapetInnerLeft[i], parapetOuterLeft[i]];
-      viaductParapetsFeatures.push({
-        type: 'Feature',
-        properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
-        geometry: { type: 'Polygon', coordinates: [plQuad] },
-      });
-      const prQuad = [parapetInnerRight[i], parapetInnerRight[i + 1], parapetOuterRight[i + 1], parapetOuterRight[i], parapetInnerRight[i]];
-      viaductParapetsFeatures.push({
-        type: 'Feature',
-        properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
-        geometry: { type: 'Polygon', coordinates: [prQuad] },
-      });
+        const maxFlare = 5.2; // Spreads outer tracks to +/- 6.85m
+        const curOffset = maxFlare * fOut;
 
-      // Twin tracks
-      const makeTrackQuad = (lE: [number, number][], rE: [number, number][], color: string, b: number, t: number) => {
-        const q = [lE[i], lE[i + 1], rE[i + 1], rE[i], lE[i]];
-        viaductTrackFeatures.push({
-          type: 'Feature',
-          properties: { base_height: b, render_height: t, color },
-          geometry: { type: 'Polygon', coordinates: [q] },
-        });
-      };
-      makeTrackQuad(upRail1Left, upRail1Right, BRIDGE_COLORS.steelRail, dTop, rTop);
-      makeTrackQuad(upRail2Left, upRail2Right, BRIDGE_COLORS.steelRail, dTop, rTop);
-      makeTrackQuad(downRail1Left, downRail1Right, BRIDGE_COLORS.steelRail, dTop, rTop);
-      makeTrackQuad(downRail2Left, downRail2Right, BRIDGE_COLORS.steelRail, dTop, rTop);
-      makeTrackQuad(centerStripeLeft, centerStripeRight, BRIDGE_COLORS.blueAccent, dTop, dTop + 0.08);
+        if (curOffset > 0.4) {
+          // Outer West Track (Track 4 / Loop Up)
+          const owCenter = -(1.65 + curOffset);
+          const owL = offsetPolyline(blueSmoothed, owCenter - 1.8);
+          const owR = offsetPolyline(blueSmoothed, owCenter + 1.8);
+          const owDQuad = [owL[i], owL[i + 1], owR[i + 1], owR[i], owL[i]];
+          viaductDeckFeatures.push({
+            type: 'Feature',
+            properties: { base_height: gTop, render_height: dTop, color: BRIDGE_COLORS.deckSurface },
+            geometry: { type: 'Polygon', coordinates: [owDQuad] },
+          });
 
-      // Support pillars under Alandur soaring upper deck (rising up to 19.5m!)
-      if (i % 10 === 0) {
-        const coord = blueSmoothed[i];
-        const nextC = blueSmoothed[Math.min(blueSmoothed.length - 1, i + 2)];
-        const prevC = blueSmoothed[Math.max(0, i - 2)];
-        const angle = Math.atan2(nextC[1] - prevC[1], nextC[0] - prevC[0]);
+          // Outer West Parapet
+          const owPLOuter = offsetPolyline(blueSmoothed, owCenter - 2.0);
+          const owPLInner = offsetPolyline(blueSmoothed, owCenter - 1.6);
+          const owPLQuad = [owPLOuter[i], owPLOuter[i + 1], owPLInner[i + 1], owPLInner[i], owPLOuter[i]];
+          viaductParapetsFeatures.push({
+            type: 'Feature',
+            properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
+            geometry: { type: 'Polygon', coordinates: [owPLQuad] },
+          });
 
-        const colBox = createBoxPolygon(coord, 2.6, 2.6, angle);
-        viaductPillarFeatures.push({
-          type: 'Feature',
-          properties: { base_height: 0, render_height: baseH, color: BRIDGE_COLORS.pierConcrete },
-          geometry: { type: 'Polygon', coordinates: [colBox] },
-        });
+          // Outer West Rail pair
+          const owR1L = offsetPolyline(blueSmoothed, owCenter - 0.75);
+          const owR1R = offsetPolyline(blueSmoothed, owCenter - 0.65);
+          const owR2L = offsetPolyline(blueSmoothed, owCenter + 0.65);
+          const owR2R = offsetPolyline(blueSmoothed, owCenter + 0.75);
+          const owR1Quad = [owR1L[i], owR1L[i + 1], owR1R[i + 1], owR1R[i], owR1L[i]];
+          const owR2Quad = [owR2L[i], owR2L[i + 1], owR2R[i + 1], owR2R[i], owR2L[i]];
+          viaductTrackFeatures.push({
+            type: 'Feature',
+            properties: { base_height: dTop, render_height: rTop, color: BRIDGE_COLORS.steelRail },
+            geometry: { type: 'Polygon', coordinates: [owR1Quad] },
+          });
+          viaductTrackFeatures.push({
+            type: 'Feature',
+            properties: { base_height: dTop, render_height: rTop, color: BRIDGE_COLORS.steelRail },
+            geometry: { type: 'Polygon', coordinates: [owR2Quad] },
+          });
 
-        const capBox = createBoxPolygon(coord, 7.4, 2.4, angle + Math.PI / 2);
-        viaductPillarFeatures.push({
-          type: 'Feature',
-          properties: { base_height: baseH - 1.3, render_height: baseH, color: BRIDGE_COLORS.capConcrete },
-          geometry: { type: 'Polygon', coordinates: [capBox] },
-        });
+          // Outer East Track (Track 1 / Loop Down)
+          const oeCenter = +(1.65 + curOffset);
+          const oeL = offsetPolyline(blueSmoothed, oeCenter - 1.8);
+          const oeR = offsetPolyline(blueSmoothed, oeCenter + 1.8);
+          const oeDQuad = [oeL[i], oeL[i + 1], oeR[i + 1], oeR[i], oeL[i]];
+          viaductDeckFeatures.push({
+            type: 'Feature',
+            properties: { base_height: gTop, render_height: dTop, color: BRIDGE_COLORS.deckSurface },
+            geometry: { type: 'Polygon', coordinates: [oeDQuad] },
+          });
+
+          // Outer East Parapet
+          const oePROuter = offsetPolyline(blueSmoothed, oeCenter + 2.0);
+          const oePRInner = offsetPolyline(blueSmoothed, oeCenter + 1.6);
+          const oePRQuad = [oePRInner[i], oePRInner[i + 1], oePROuter[i + 1], oePROuter[i], oePRInner[i]];
+          viaductParapetsFeatures.push({
+            type: 'Feature',
+            properties: { base_height: gTop, render_height: pTop, color: BRIDGE_COLORS.parapetCurb },
+            geometry: { type: 'Polygon', coordinates: [oePRQuad] },
+          });
+
+          // Outer East Rail pair
+          const oeR1L = offsetPolyline(blueSmoothed, oeCenter - 0.75);
+          const oeR1R = offsetPolyline(blueSmoothed, oeCenter - 0.65);
+          const oeR2L = offsetPolyline(blueSmoothed, oeCenter + 0.65);
+          const oeR2R = offsetPolyline(blueSmoothed, oeCenter + 0.75);
+          const oeR1Quad = [oeR1L[i], oeR1L[i + 1], oeR1R[i + 1], oeR1R[i], oeR1L[i]];
+          const oeR2Quad = [oeR2L[i], oeR2L[i + 1], oeR2R[i + 1], oeR2R[i], oeR2L[i]];
+          viaductTrackFeatures.push({
+            type: 'Feature',
+            properties: { base_height: dTop, render_height: rTop, color: BRIDGE_COLORS.steelRail },
+            geometry: { type: 'Polygon', coordinates: [oeR1Quad] },
+          });
+          viaductTrackFeatures.push({
+            type: 'Feature',
+            properties: { base_height: dTop, render_height: rTop, color: BRIDGE_COLORS.steelRail },
+            geometry: { type: 'Polygon', coordinates: [oeR2Quad] },
+          });
+
+          // Support Cantilever Straddles under the 4-track Alandur complex
+          if (i % 12 === 0) {
+            const coord = blueSmoothed[i];
+            const nextC = blueSmoothed[Math.min(blueSmoothed.length - 1, i + 2)];
+            const prevC = blueSmoothed[Math.max(0, i - 2)];
+            const angle = Math.atan2(nextC[1] - prevC[1], nextC[0] - prevC[0]);
+
+            // Wide multi-track straddle crosshead
+            const wideCap = createBoxPolygon(coord, 14.8, 2.6, angle + Math.PI / 2);
+            viaductPillarFeatures.push({
+              type: 'Feature',
+              properties: { base_height: baseH - 1.4, render_height: baseH, color: BRIDGE_COLORS.capConcrete },
+              geometry: { type: 'Polygon', coordinates: [wideCap] },
+            });
+          }
+        }
       }
     }
 
-    // 3. Flat Post-Alandur through Little Mount (1948 to 2720)
-    renderFlatSpan(1948, southRampStart, 12.5);
+    // 3. Flat Post-Alandur through Little Mount (1880 to 2720)
+    renderFlatSpan(1880, southRampStart, 12.5);
 
     // C. South Ramp & Retaining Trench down into Saidapet Portal (2720 to 2880)
     const sRampLen = saidapetPortalIdx - southRampStart;

@@ -1,0 +1,123 @@
+NOTE:
+1. Central ↔ Alandur (via CMBT) during peak hours, Non peak hours & Extended Non peak hours are operated at 6 mins, 7 mins and 15 mins frequency respectively.
+2. Short loop services shall not be operated on Saturdays/Sundays/Holidays.
+From Chennai Central:- 05:02Hrs 	From Chennai Central:- 23:00Hrs 0500-0800Hrs,1100-1700Hrs &
+2000-2200Hrs Every 14 mins
+2200-2300Hrs Every 30mins
+0800-1100Hrs & 1700-2000Hrs
+Every 12 mins
+From St. Thomas Mount:- 05:01Hrs From St. Thomas Mount:- 23:00Hrs
+CORRIDOR - 2 (GREEN LINE) 05:00hrs - 23:00hrs
+CHENNAI CENTRAL ↔ ST. THOMAS MOUNT (via EGMORE, CMBT, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Chennai Central:- 04:55Hrs 	From Chennai Central:- 23:17Hrs 0500-0800Hrs,1100-1700Hrs &
+2000-2200Hrs Every 14 mins
+2200-2300Hrs Every 30mins
+0800-1100Hrs & 1700-2000Hrs
+Every 12 mins
+From Airport:- 05:02Hrs 	From Airport:- 23:08Hrs
+INTER-CORRIDOR - 05:00hrs - 23:00hrs
+CHENNAI CENTRAL ↔ AIRPORT (via EGMORE, CMBT, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Airport:- 04:51Hrs 	From Airport:- 23:00Hrs 	0500-0800Hrs,1100-1700Hrs &
+2000-2200Hrs Every 7 mins
+2200-2300Hrs Every 15mins
+0800-1100Hrs & 1700-2000Hrs
+Every 6 mins
+From Wimco Nagar Depot:- 04:56Hrs From Wimco Nagar Depot:- 23:00Hrs
+SATURDAY
+CORRIDOR - 1 (BLUE LINE) 05:00hrs - 23:00hrs
+WIMCO NAGAR DEPOT ↔ AIRPORT (via WIMCO NAGAR, WASHERMENPET, CENTRAL, AGDMS, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Chennai Central:- 05:01Hrs 	From Chennai Central:- 23:07Hrs 	0500-1200Hrs &
+2000-2200 Every 20 mins 1200-2000Hrs
+INTER-CORRIDOR - 05:00hrs - 23:00hrs
+CHENNAI CENTRAL ↔ AIRPORT (via EGMORE, CMBT, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+WEEKDAYS (MONDAY - FRIDAY)
+CORRIDOR - 1 (BLUE LINE) 05:00hrs - 23:00hrs
+WIMCO NAGAR DEPOT ↔ AIRPORT (via WIMCO NAGAR, WASHERMENPET, CENTRAL, AGDMS, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Airport:- 04:51Hrs 	From Airport:- 23:00Hrs 	0500-0800Hrs,1100-1700Hrs &
+2000-2200Hrs Every 7 mins
+2200-2300Hrs Every 15mins
+0800-1100Hrs & 1700-2000Hrs
+Every 6 mins
+3 mins frequency between
+Washermenpet & Alandur	From Wimco Nagar Depot:- 04:56Hrs From Wimco Nagar Depot:- 23:00Hrs
+INTER-CORRIDOR - 05:00hrs - 23:00hrs
+CHENNAI CENTRAL ↔ AIRPORT (via EGMORE, CMBT, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Chennai Central:- 04:55Hrs 	From Chennai Central:- 23:17Hrs 0500-0800Hrs,1100-1700Hrs &
+2000-2200Hrs Every 14 mins
+2200-2300Hrs Every 30mins
+0800-1100Hrs & 1700-2000Hrs
+Every 12 mins
+From Airport:- 05:02Hrs 	From Airport:- 23:08Hrs
+CORRIDOR - 2 (GREEN LINE) 05:00hrs - 23:00hrs
+CHENNAI CENTRAL ↔ ST. THOMAS MOUNT (via EGMORE, CMBT, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+NOTE:
+1. Central ↔ Alandur (via CMBT) during peak hours, Non peak hours & Extended Non peak hours are operated at 6 mins, 7 mins and 15 mins frequency respectively.
+2. Washermenpet ↔ Alandur (via Chennai central, AGDMS & Guindy) during peak hours shall be maintained at 3 mins frequency with the operation of short loop services.
+3. Short loop services shall not be operated on Saturdays/Sundays/Holidays.
+From Chennai Central:- 05:02Hrs 	From Chennai Central:- 23:00Hrs 0500-0800Hrs,1100-1700Hrs &
+2000-2200Hrs Every 14 mins
+2200-2300Hrs Every 30mins
+0800-1100Hrs & 1700-2000Hrs
+Every 12 mins
+From St. Thomas Mount:- 05:01Hrs From St. Thomas Mount:- 23:00Hrs
+CORRIDOR - 4 (YELLOW LINE) 05:00hrs - 21:00hrs
+POONAMALLEE BYPASS ↔ VADAPALANI (via KUMANANCHAVADI, IYYAPANTHANGAL, PORUR JUNCTION)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Poonamallee Bypass:- 07:00Hrs From Poonamallee Bypass:- 21:00Hrs 0700-0800Hrs,1100-1700Hrs &
+2000-2100Hrs Every 15 mins
+0800-1100Hrs & 1700-2000Hrs
+Every 10 mins
+From Vadapalani:- 07:00Hrs 	From Vadapalani:- 21:00Hrs
+CORRIDOR - 4 (YELLOW LINE) 07:00hrs - 21:00hrs
+POONAMALLEE BYPASS ↔ VADAPALANI (via KUMANANCHAVADI, IYYAPANTHANGAL, PORUR JUNCTION)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Poonamallee Bypass:- 07:00Hrs From Poonamallee Bypass:- 21:00Hrs 0700-0800Hrs,1100-1700Hrs &
+2000-2100Hrs Every 15 mins
+0800-1100Hrs & 1700-2000Hrs
+Every 10 mins
+From Vadapalani:- 07:00Hrs 	From Vadapalani:- 21:00Hrs
+From Airport:- 05:02Hrs 	From Airport:- 23:00Hrs 	0500-1200Hrs &
+2000-2200 Every 10 mins
+2200-2300Hrs Every 15mins
+1200-2000Hrs
+Every 7 mins
+From Wimco Nagar Depot:- 05:03Hrs From Wimco Nagar Depot:- 23:00Hrs
+SUNDAY / HOLIDAYS
+CORRIDOR - 1 (BLUE LINE) 05:00hrs - 23:00hrs
+WIMCO NAGAR DEPOT ↔ AIRPORT (via WIMCO NAGAR, WASHERMANPET, CENTRAL, AGDMS, ALANDUR)
+
+-- 1 of 2 --
+
+NOTE:
+1. Central ↔ Alandur (via CMBT) during peak hours, Non peak hours & Extended Non peak hours are operated at 7 mins, 10 mins and 15 mins frequency respectively.
+2. Short loop services shall not be operated on Saturdays/Sundays/Holidays.
+From Chennai Central:- 04:51Hrs 	From Chennai Central:- 23:17Hrs 	0500-1200Hrs &
+2000-2200 Every 20 mins
+2200-2300Hrs Every 30mins
+1200-2000Hrs
+Every 14 mins
+From St. Thomas Mount:- 04:51Hrs From St. Thomas Mount:- 23:07Hrs
+CORRIDOR - 2 (GREEN LINE) - 05:00hrs - 23:00hrs
+CHENNAI CENTRAL ↔ ST. THOMAS MOUNT (via EGMORE, CMBT, ALANDUR)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+CORRIDOR - 4 (YELLOW LINE) 07:00hrs - 21:00hrs
+POONAMALLEE BYPASS ↔ VADAPALANI (via KUMANANCHAVADI, IYYAPANTHANGAL, PORUR JUNCTION)
+Departure Time of First train 	Departure Time of Last train 	Non peak hour Frequency 	Peak hour Frequency
+From Poonamallee Bypass:- 07:00Hrs From Poonamallee Bypass:- 21:00Hrs
+0700-2100Hrs Every 15 mins 	No Peak hour service
+From Vadapalani:- 07:00Hrs
+2000-2200 Every 20 mins
+2200-2300Hrs Every 30mins Every 14 mins
+From Airport:- 04:55Hrs 	From Airport:- 23:08Hrs
+From Vadapalani:- 21:00Hrs
+
+-- 2 of 2 --
+

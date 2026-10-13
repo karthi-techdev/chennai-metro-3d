@@ -10,6 +10,17 @@ import {
 } from '../data/chennaiMetroData';
 import { generateMetro3DStructures } from '../data/metro3dEngine';
 import { ThreeMetroBridgeLayer } from './ThreeMetroBridgeLayer';
+import {
+  ActiveTrainTelemetry,
+  DayOfWeek,
+  DAY_NAMES,
+  DAY_LABELS,
+  formatSecondsToHHMMSS,
+  getCMRLServiceStatus,
+  getCMRLServiceStatusForDay,
+  getCurrentISTSeconds,
+  getSystemDayOfWeek,
+} from '../data/metroScheduleEngine';
 
 const INITIAL_CENTER: [number, number] = [80.201453, 13.004256]; // Alandur 3D Viaduct Interchange
 const INITIAL_ZOOM = 16.5;
@@ -35,6 +46,17 @@ export default function MapComponent() {
   const themeRef = useRef<'light' | 'dark'>('dark');
   const [isTrainPaused, setIsTrainPaused] = useState<boolean>(false);
   const isTrainPausedRef = useRef<boolean>(false);
+
+  // Timetable Schedule Engine State (STRICT real-time wall-clock IST)
+  const systemDay = getSystemDayOfWeek();
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>(systemDay);
+  const [simTimeSec, setSimTimeSec] = useState<number>(getCurrentISTSeconds());
+  const [selectedTrainIndex, setSelectedTrainIndex] = useState<number>(0);
+  const [trainTelemetry, setTrainTelemetry] = useState<ActiveTrainTelemetry | null>(null);
+  const [serviceStatus, setServiceStatus] = useState(getCMRLServiceStatusForDay(systemDay, getCurrentISTSeconds()));
+  const [activeTripIds, setActiveTripIds] = useState<string[]>([]);
+  const [tripLineColors, setTripLineColors] = useState<('blue' | 'green')[]>([]);
+  const [activeTrainCount, setActiveTrainCount] = useState<number>(0);
 
   // Telemetry state
   const [telemetry, setTelemetry] = useState({
@@ -360,8 +382,8 @@ export default function MapComponent() {
       const follow = () => {
         if (!mapRef.current) return;
         const layer = (mapRef.current as any).style?._layers?.['three-metro-bridges']?.implementation;
-        if (layer?.trainFleet?.trains?.[0]) {
-          const train = layer.trainFleet.trains[0];
+        if (layer?.trainFleet?.trains?.[selectedTrainIndex]) {
+          const train = layer.trainFleet.trains[selectedTrainIndex];
           const pos = train.cars[0].group.position;
           const oMerc = layer.originMerc;
           const scale = layer.meterScale;
@@ -382,7 +404,7 @@ export default function MapComponent() {
       };
       follow();
     }
-  }, [isFollowingTrain, isOrbiting]);
+  }, [isFollowingTrain, isOrbiting, selectedTrainIndex]);
 
   // Toggle Pause/Resume Metro Train Movements
   const togglePauseTrains = useCallback(() => {
@@ -393,6 +415,42 @@ export default function MapComponent() {
       return next;
     });
   }, []);
+
+  // Periodic poll of real-time clock, service status, and train telemetry
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const layer = threeLayerRef.current;
+      if (!layer?.trainFleet) return;
+      const t = layer.trainFleet.getSimTime();
+      setSimTimeSec(t);
+      setServiceStatus(getCMRLServiceStatusForDay(selectedDay, t));
+      const tel = layer.trainFleet.getPrimaryTrainTelemetry(selectedTrainIndex);
+      setTrainTelemetry(tel);
+      // Live trip roster for the selector strip
+      const telemetries = layer.trainFleet
+        .getFleetTelemetry()
+        .filter((x): x is ActiveTrainTelemetry => x !== null);
+      setActiveTripIds(telemetries.map((x) => x.tripId));
+      setTripLineColors(telemetries.map((x) => x.line));
+      setActiveTrainCount(telemetries.length);
+      if (selectedTrainIndex >= telemetries.length && telemetries.length > 0) {
+        setSelectedTrainIndex(0);
+      }
+    }, 150);
+    return () => clearInterval(timer);
+  }, [selectedTrainIndex, selectedDay]);
+
+  const handleSelectDay = (day: DayOfWeek) => {
+    setSelectedDay(day);
+    threeLayerRef.current?.setSelectedDay(day);
+    setServiceStatus(getCMRLServiceStatusForDay(day, simTimeSec));
+  };
+
+  const handleSelectTrain = (index: number) => {
+    setSelectedTrainIndex(index);
+    const tel = threeLayerRef.current?.trainFleet?.getPrimaryTrainTelemetry(index);
+    setTrainTelemetry(tel || null);
+  };
 
   // Toggle 3D Buildings Visibility
   const toggleBuildings = () => {
@@ -443,6 +501,88 @@ export default function MapComponent() {
         ))}
       </div>
 
+      {/* Timetable Schedule Engine & Clock Bar */}
+      <div className={styles.timetableBar} role="region" aria-label="Timetable Schedule Controls">
+        <div className={styles.timetableHeader}>
+          <div className={styles.digitalClockWrapper}>
+            <span
+              className={styles.livePulseDot}
+              style={{
+                background: '#22c55e',
+                boxShadow: '0 0 10px #22c55e',
+              }}
+            />
+            <span className={styles.digitalClock}>{formatSecondsToHHMMSS(simTimeSec)}</span>
+            <span className={styles.clockTz}>IST</span>
+          </div>
+
+          <div
+            className={`${styles.serviceBadge} ${
+              serviceStatus.badgeType === 'peak'
+                ? styles.badgePeak
+                : serviceStatus.badgeType === 'regular'
+                ? styles.badgeRegular
+                : serviceStatus.badgeType === 'late'
+                ? styles.badgeLate
+                : styles.badgeClosed
+            }`}
+          >
+            {serviceStatus.statusText}
+          </div>
+        </div>
+
+        {/* Day-of-Week Schedule Selector (Monday to Sunday) */}
+        <div className={styles.dayStrip}>
+          {(['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as DayOfWeek[]).map((day) => {
+            const isToday = day === systemDay;
+            const isSel = day === selectedDay;
+            return (
+              <button
+                key={day}
+                className={`${styles.dayPill} ${isSel ? styles.active : ''}`}
+                onClick={() => handleSelectDay(day)}
+                title={`${DAY_LABELS[day]} Schedule Operations`}
+              >
+                <span>{day}</span>
+                {isToday && <span className={styles.dayTodayBadge}>TODAY</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Strictly Real-Time (wall-clock IST): no multiplier, no scrubber, no presets */}
+        <div className={styles.timeControlsRow}>
+          <span
+            className={styles.timeButton}
+            title="Clock is locked to real-world Indian Standard Time — trains run exactly on schedule"
+          >
+            ⏱️ Real-Time ONLY — all trains tracked live by official CMRL timetable
+          </span>
+        </div>
+
+        {/* Live Train Selector Strip (all active trains on network, by trip) */}
+        <div className={styles.fleetStrip}>
+          {trainTelemetry && (
+            <span style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, alignSelf: 'center', paddingRight: 6 }}>
+              {activeTrainCount} trains live
+            </span>
+          )}
+          {activeTripIds.map((tripId, idx) => (
+            <button
+              key={tripId}
+              className={`${styles.trainPill} ${tripLineColors[idx] === 'green' ? styles.green : ''} ${
+                selectedTrainIndex === idx ? styles.active : ''
+              }`}
+              onClick={() => handleSelectTrain(idx)}
+              title={`Track and follow ${tripId}`}
+            >
+              <span>{tripLineColors[idx] === 'green' ? '🟢' : '🔵'}</span>
+              <span>{tripId}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Floating Navigation Controls */}
       <aside className={styles.floatingControls}>
         <button
@@ -450,14 +590,30 @@ export default function MapComponent() {
           onClick={() => {
             mapRef.current?.flyTo({
               center: [80.201453, 13.004256],
-              zoom: 17.5,
-              pitch: 72,
-              bearing: 35,
+              zoom: 17.6,
+              pitch: 70,
+              bearing: 40,
               duration: 2000,
             });
           }}
+          title="Green Line on Top (Level 2), Blue Line Below (Level 1)"
         >
           🌉 3D Interchange (Alandur)
+        </button>
+        <button
+          className={styles.actionPillButton}
+          onClick={() => {
+            mapRef.current?.flyTo({
+              center: [80.2015, 13.0035],
+              zoom: 17.2,
+              pitch: 18,
+              bearing: 25,
+              duration: 2000,
+            });
+          }}
+          title="Top view of Blue Line splitting into 4 ways and rejoining at Alandur"
+        >
+          🛰️ Alandur 4-Way Split (Top View)
         </button>
         <button
           className={styles.actionPillButton}
@@ -517,9 +673,9 @@ export default function MapComponent() {
         <button
           className={`${styles.actionPillButton} ${isFollowingTrain ? styles.active : ''}`}
           onClick={toggleFollowTrain}
-          title="Attach cinematic chase camera to follow 3D metro train"
+          title="Attach cinematic chase camera to follow selected metro train"
         >
-          {isFollowingTrain ? '⏹️ Stop Following' : '🚆 Follow Metro Train'}
+          {isFollowingTrain ? '⏹️ Stop Following' : '🚆 Follow Train'}
         </button>
         <button
           className={`${styles.actionPillButton} ${isTrainPaused ? styles.paused : ''}`}
@@ -545,20 +701,60 @@ export default function MapComponent() {
       {/* Bottom Telemetry Navigation Capsule */}
       <footer className={styles.bottomNavCapsule}>
         <div className={styles.capsuleItem}>
-          <div className={styles.capsuleValue}>{isTrainPaused ? 0 : telemetry.speed}</div>
-          <div className={styles.capsuleLabel}>{isTrainPaused ? 'PAUSED' : 'KM/H'}</div>
+          <div className={styles.capsuleValue}>
+            {isTrainPaused ? 0 : (trainTelemetry?.speedKmh ?? 0)}
+          </div>
+          <div className={styles.capsuleLabel}>{isTrainPaused ? 'PAUSED' : 'KM/H SPEED'}</div>
+          {trainTelemetry?.motionState && (
+            <div
+              className={`${styles.statusBadge} ${
+                trainTelemetry.motionState === 'DWELLING'
+                  ? styles.statusDwelling
+                  : trainTelemetry.motionState === 'ACCELERATING'
+                  ? styles.statusAccel
+                  : trainTelemetry.motionState === 'CRUISING'
+                  ? styles.statusCruise
+                  : styles.statusBrake
+              }`}
+            >
+              {trainTelemetry.motionState === 'DWELLING'
+                ? `DOORS OPEN (${trainTelemetry.dwellRemainingSec}s)`
+                : trainTelemetry.motionState}
+            </div>
+          )}
         </div>
+
         <div className={styles.capsuleDivider} />
+
         <div className={styles.capsuleItem}>
-          <div className={styles.capsuleValue}>{telemetry.headway}</div>
-          <div className={styles.capsuleLabel}>MIN HEADWAY</div>
+          <div className={styles.capsuleValue} style={{ fontSize: 13, fontWeight: 700, maxWidth: 220, textAlign: 'center', lineHeight: 1.25 }}>
+            {trainTelemetry?.currentStation || 'Station'} ➔ {trainTelemetry?.nextStation || 'Next Station'}
+          </div>
+          <div className={styles.capsuleLabel}>
+            {trainTelemetry?.motionState === 'DWELLING'
+              ? `PLATFORM STOP • ${trainTelemetry?.elevationType || 'Station'}`
+              : `ETA: ${trainTelemetry?.etaNextStationSec ?? 0}s • ${trainTelemetry?.elevationType || 'Transit'}`}
+          </div>
         </div>
+
         <div className={styles.capsuleDivider} />
+
+        <div className={styles.capsuleItem}>
+          <div className={styles.capsuleValue}>
+            {serviceStatus.headwayMinutes > 0 ? `${serviceStatus.headwayMinutes}m` : '--'}
+          </div>
+          <div className={styles.capsuleLabel}>HEADWAY</div>
+        </div>
+
+        <div className={styles.capsuleDivider} />
+
         <div className={styles.capsuleItem}>
           <div className={styles.capsuleValue}>{telemetry.pitch}°</div>
-          <div className={styles.capsuleLabel}>CAMERA TILT</div>
+          <div className={styles.capsuleLabel}>TILT</div>
         </div>
+
         <div className={styles.capsuleDivider} />
+
         <div className={styles.capsuleItem}>
           <div className={styles.capsuleValue}>{telemetry.bearing}°</div>
           <div className={styles.capsuleLabel}>HEADING</div>
