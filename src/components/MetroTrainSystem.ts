@@ -852,10 +852,14 @@ export class TrainConsist {
     this.cars[1].isFlipped = isDown;
     this.cars[2].isFlipped = isDown;
     this.cars[3].isFlipped = !isDown;
+    // Telemetry distance represents the station stopping point, so center the
+    // complete four-car consist on that point instead of placing the lead car
+    // directly over it (which made the train appear to stop halfway through platforms).
+    // Car centers are approximately 22.22 m apart; the full consist is ~88.9 m long.
     if (this.direction === 'UP') {
-      this.carOffsets = [0, -22.21, -44.45, -66.66];
+      this.carOffsets = [33.33, 11.11, -11.11, -33.33];
     } else {
-      this.carOffsets = [0, 22.21, 44.45, 66.66];
+      this.carOffsets = [-33.33, -11.11, 11.11, 33.33];
     }
   }
 
@@ -928,11 +932,13 @@ export class TrainConsist {
     this.cars.push({ group: rearDMC, isFlipped: !isDown });
     this.group.add(rearDMC);
 
-    // Precise center-to-center offsets along track (calibrated to actual car bounding boxes + 0.48m coupler gap):
+    // Center the full four-car consist on the scheduled station stop position.
+    // This prevents the lead car being aligned to the marker while the rear half
+    // of the train remains outside the platform canopy.
     if (direction === 'UP') {
-      this.carOffsets = [0, -22.21, -44.45, -66.66];
+      this.carOffsets = [33.33, 11.11, -11.11, -33.33];
     } else {
-      this.carOffsets = [0, 22.21, 44.45, 66.66];
+      this.carOffsets = [-33.33, -11.11, 11.11, 33.33];
     }
 
     // Initial position

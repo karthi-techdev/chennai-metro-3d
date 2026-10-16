@@ -128,13 +128,19 @@ export default function MapComponent() {
       map.addLayer(
         {
           id: 'layer-metro-tunnels',
-          type: 'fill-extrusion',
+          type: 'line',
           source: 'source-metro-tunnels',
           paint: {
-            'fill-extrusion-base': ['get', 'base_height'],
-            'fill-extrusion-height': ['get', 'render_height'],
-            'fill-extrusion-color': ['get', 'color'],
-            'fill-extrusion-opacity': 0.95,
+            'line-color': ['get', 'color'],
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              12, 1.5,
+              15, 2.5,
+              18, 4,
+            ],
+            'line-opacity': 0.85,
           },
         },
         beforeBuildingId

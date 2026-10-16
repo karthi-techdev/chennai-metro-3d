@@ -571,35 +571,12 @@ export function generateMetro3DStructures(): Metro3DGeometry {
       });
     }
 
-    // E. Subterranean Tunnel Ribbon (4015 to end)
-    const tunnelPoly = createRibbonFromEdges(
-      tunnelLeft.slice(portalIdx),
-      tunnelRight.slice(portalIdx)
-    );
-    if (tunnelPoly) {
-      tunnelTubeFeatures.push({
-        type: 'Feature',
-        properties: { base_height: 0, render_height: 0.8, color: '#111827' },
-        geometry: { type: 'Polygon', coordinates: [tunnelPoly] },
-      });
-    }
-
-    const tUpRail = createRibbonFromEdges(upRail1Left.slice(portalIdx), upRail2Right.slice(portalIdx));
-    if (tUpRail) {
-      tunnelTubeFeatures.push({
-        type: 'Feature',
-        properties: { base_height: 0.2, render_height: 0.9, color: BRIDGE_COLORS.greenAccent },
-        geometry: { type: 'Polygon', coordinates: [tUpRail] },
-      });
-    }
-    const tDownRail = createRibbonFromEdges(downRail1Left.slice(portalIdx), downRail2Right.slice(portalIdx));
-    if (tDownRail) {
-      tunnelTubeFeatures.push({
-        type: 'Feature',
-        properties: { base_height: 0.2, render_height: 0.9, color: BRIDGE_COLORS.greenAccent },
-        geometry: { type: 'Polygon', coordinates: [tDownRail] },
-      });
-    }
+    // E. Single underground line (4015 to end) — one stroke, not a double track slab
+    tunnelTubeFeatures.push({
+      type: 'Feature',
+      properties: { color: BRIDGE_COLORS.greenAccent },
+      geometry: { type: 'LineString', coordinates: greenSmoothed.slice(portalIdx) },
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -655,12 +632,21 @@ export function generateMetro3DStructures(): Metro3DGeometry {
     const getSouthElev = (_idx: number): number => 12.5;
 
     // A. Ground Drop Shadows along Blue Elevated Spans
+    // Flat elevated only. The Meenambakkam dip (646–1092) is ramp + underground, same as Saidapet ramp being excluded.
+    viaductShadowFeatures.push({
+      type: 'Feature',
+      properties: { line_id: 'blue-airport-shadow' },
+      geometry: {
+        type: 'LineString',
+        coordinates: blueSmoothed.slice(0, 647),
+      },
+    });
     viaductShadowFeatures.push({
       type: 'Feature',
       properties: { line_id: 'blue-south-shadow' },
       geometry: {
         type: 'LineString',
-        coordinates: blueSmoothed.slice(0, southRampStart + 1),
+        coordinates: blueSmoothed.slice(1092, southRampStart + 1),
       },
     });
     viaductShadowFeatures.push({
@@ -889,35 +875,25 @@ export function generateMetro3DStructures(): Metro3DGeometry {
       });
     }
 
-    // E. Central Continuous Subterranean Tunnel (2880 to 8600)
-    const cTunnelPoly = createRibbonFromEdges(
-      tunnelLeft.slice(saidapetPortalIdx, newWasherPortalIdx + 1),
-      tunnelRight.slice(saidapetPortalIdx, newWasherPortalIdx + 1)
-    );
-    if (cTunnelPoly) {
-      tunnelTubeFeatures.push({
-        type: 'Feature',
-        properties: { base_height: 0, render_height: 0.8, color: '#111827' },
-        geometry: { type: 'Polygon', coordinates: [cTunnelPoly] },
-      });
-    }
+    // E. Single underground line (Saidapet portal to New Washermanpet portal)
+    tunnelTubeFeatures.push({
+      type: 'Feature',
+      properties: { color: BRIDGE_COLORS.blueAccent },
+      geometry: {
+        type: 'LineString',
+        coordinates: blueSmoothed.slice(saidapetPortalIdx, newWasherPortalIdx + 1),
+      },
+    });
 
-    const cUpRail = createRibbonFromEdges(upRail1Left.slice(saidapetPortalIdx, newWasherPortalIdx + 1), upRail2Right.slice(saidapetPortalIdx, newWasherPortalIdx + 1));
-    if (cUpRail) {
-      tunnelTubeFeatures.push({
-        type: 'Feature',
-        properties: { base_height: 0.2, render_height: 0.9, color: BRIDGE_COLORS.blueAccent },
-        geometry: { type: 'Polygon', coordinates: [cUpRail] },
-      });
-    }
-    const cDownRail = createRibbonFromEdges(downRail1Left.slice(saidapetPortalIdx, newWasherPortalIdx + 1), downRail2Right.slice(saidapetPortalIdx, newWasherPortalIdx + 1));
-    if (cDownRail) {
-      tunnelTubeFeatures.push({
-        type: 'Feature',
-        properties: { base_height: 0.2, render_height: 0.9, color: BRIDGE_COLORS.blueAccent },
-        geometry: { type: 'Polygon', coordinates: [cDownRail] },
-      });
-    }
+    // E2. Single underground line for the Nanganallur–Meenambakkam dip
+    tunnelTubeFeatures.push({
+      type: 'Feature',
+      properties: { color: BRIDGE_COLORS.blueAccent },
+      geometry: {
+        type: 'LineString',
+        coordinates: blueSmoothed.slice(757, 928),
+      },
+    });
 
     // F. New Washermanpet Concrete Portal Headwall (8600)
     const newWasherCoord = blueSmoothed[newWasherPortalIdx];
